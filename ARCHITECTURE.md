@@ -19,7 +19,8 @@ src/tool_bot/
 ├── conversation.py       # In-memory conversation tree/DAG
 ├── llm_engine.py         # LLM tool-calling (OpenAI/Anthropic)
 ├── anki_client.py        # Anki-Connect JSON-RPC client
-└── todoist_client.py     # Todoist REST API client
+├── todoist_client.py     # Todoist REST API client
+└── web_search_client.py  # DuckDuckGo web search client
 ```
 
 ### Key Design Decisions
@@ -74,7 +75,7 @@ src/tool_bot/
 
 6. **LLM Engine** (`llm_engine.py`)
    - `LLMEngine` class: unified interface for OpenAI and Anthropic
-   - Tool schemas: `FlashcardCreate` (type, front, back, deck, tags), `TodoCreate` (content, due_string, priority, labels, project_name)
+   - Tool schemas: `FlashcardCreate` (type, front, back, deck, tags), `TodoCreate` (content, due_string, priority, labels, project_name), `WebSearch` (query, max_results)
    - Methods:
      - `_get_tools_schema()`: format tools for each provider
      - `process_message(system_prompt, messages)`: returns (text, tool_calls)
@@ -93,6 +94,12 @@ src/tool_bot/
      - `create_task()`: with idempotency (`X-Request-Id`)
      - `get_projects()`, `create_project()`, `get_or_create_project()`
    - Natural date parsing via `due_string`
+
+9. **Web Search Client** (`web_search_client.py`)
+   - `WebSearchClient`: DuckDuckGo web search via duckduckgo-search library
+   - Methods:
+     - `search(query, max_results)`: performs web search and returns formatted results
+   - Results include title, body snippet, and URL for each search result
 
 ### 🚧 In Progress / TODO
 

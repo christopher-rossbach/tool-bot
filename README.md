@@ -1,10 +1,12 @@
 # Matrix Tool Bot
 
-A Python Matrix bot powered by LLM tool-calling (OpenAI/Anthropic) that proposes and executes tasks like creating Anki flashcards and Todoist todos. Features include threaded conversations, message edits with regeneration, reaction-based approvals (all thumbs-up variants), voice message transcription (DE/ES/EN), cascading deletions, and restart-safe state management.
+A Python Matrix bot powered by LLM tool-calling (OpenAI/Anthropic) that proposes and executes tasks like creating Anki flashcards and Todoist todos.
+Features include web search capabilities, threaded conversations, message edits with regeneration, reaction-based approvals (all thumbs-up variants), voice message transcription (DE/ES/EN), cascading deletions, and restart-safe state management.
 
 ## ✨ Features
 
 - **LLM Tool Calling**: Uses OpenAI (gpt-4o-mini) or Anthropic (claude-3.5-sonnet) with function/tool calling
+- **Web Search**: Search the web using DuckDuckGo to enrich context with up-to-date information
 - **Anki Integration**: Creates flashcards via Anki-Connect with automatic deck hierarchy (`Active::Bot`)
 - **Todoist Integration**: Creates tasks with natural language due dates and project management
 - **Threaded Context**: First message spawns a thread; maintains conversation context
@@ -72,7 +74,7 @@ Bot: ✅ Flashcard created in Anki (note id: 1234567890)
 \`\`\`
 
 **Creating todos:**
-\`\`\`
+```
 You: Remind me to review flashcards tomorrow at 7pm
 Bot: [Todo Proposal]
      Task: Review flashcards
@@ -82,7 +84,23 @@ Bot: [Todo Proposal]
      React with 👍 to create.
 You: 👍
 Bot: ✅ Todo created in Todoist (task id: 7890123456)
-\`\`\`
+```
+
+**Web search:**
+```
+You: What are the latest developments in quantum computing?
+Bot: 🔍 Web Search Results for: latest developments in quantum computing
+
+     1. **Quantum Computing Breakthrough 2024**
+        Scientists achieve new milestone in error correction...
+        https://example.com/quantum-news
+
+     2. **IBM Announces 1000-Qubit Processor**
+        Major advancement in quantum processor technology...
+        https://example.com/ibm-quantum
+     
+     [Additional results...]
+```
 
 **Voice messages:**
 \`\`\`
