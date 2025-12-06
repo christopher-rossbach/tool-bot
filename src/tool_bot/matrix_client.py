@@ -674,7 +674,7 @@ class MatrixBot:
                     else:
                         # Step 3: Fetch webpage content for top results
                         webpage_contents = []
-                        for i, result in enumerate(results[:3]):
+                        for i, result in enumerate(results[:max_results]):
                             try:
                                 content_text = (
                                     await self.web_search.fetch_webpage_content(
@@ -715,9 +715,8 @@ class MatrixBot:
                                 )
                                 extraction_prompt += f"URL: {page['url']}\n"
                                 extraction_prompt += f"Snippet: {page['snippet']}\n"
-                                extraction_prompt += (
-                                    f"Content excerpt: {page['content'][:2000]}...\n\n"
-                                )
+                                max_excerpt = self.web_search.MAX_EXCERPT_LENGTH
+                                extraction_prompt += f"Content excerpt: {page['content'][:max_excerpt]}...\n\n"
 
                             # Call LLM to extract information
                             system_prompt = (

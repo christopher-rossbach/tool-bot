@@ -14,6 +14,9 @@ logger = logging.getLogger(__name__)
 class WebSearchClient:
     """Client for performing web searches using DuckDuckGo."""
 
+    MAX_CONTENT_LENGTH = 10000
+    MAX_EXCERPT_LENGTH = 2000
+
     def __init__(self):
         self.timeout = 10.0
 
@@ -78,11 +81,14 @@ class WebSearchClient:
                 response = await client.get(url)
                 response.raise_for_status()
 
-                content_type = response.headers.get("content-type", "")
-                if "text/html" not in content_type and "text/plain" not in content_type:
+                content_type = response.headers.get("content-type", "").lower()
+                if not (
+                    content_type.startswith("text/html")
+                    or content_type.startswith("text/plain")
+                ):
                     raise RuntimeError(f"Unsupported content type: {content_type}")
 
-                text_content = response.text[:10000]
+                text_content = response.text[: self.MAX_CONTENT_LENGTH]
 
                 logger.info(f"Fetched {len(text_content)} characters from {url}")
                 return text_content
