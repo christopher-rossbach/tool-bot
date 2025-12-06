@@ -1,6 +1,7 @@
 """Matrix client wrapper with async event handlers."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from typing import Dict, Optional
@@ -257,6 +258,21 @@ class MatrixBot:
         except Exception as e:
             logger.error(f"Error checking room members in {room.room_id}: {e}")
 
+    async def _mark_as_read(self, room_id: str, event_id: str) -> None:
+        """Mark a message as read by setting read markers."""
+        if not self.client:
+            return
+        
+        try:
+            await self.client.room_read_markers(
+                room_id=room_id,
+                fully_read_event=event_id,
+                read_event=event_id,
+            )
+            logger.debug(f"Marked message {event_id} as read in room {room_id}")
+        except Exception as e:
+            logger.warning(f"Failed to mark message as read: {e}")
+    
     async def on_audio(self, room, event: RoomMessageAudio) -> None:
         """Handle audio/voice messages."""
         if event.sender == self.bot_user_id:
@@ -270,6 +286,9 @@ class MatrixBot:
             return
 
         logger.info(f"Audio message in {room.room_id} from {event.sender}")
+        
+        # Use await (not create_task) to ensure completion before early returns
+        await self._mark_as_read(room.room_id, event.event_id)
         
         try:
             # Download audio file
@@ -415,6 +434,8 @@ class MatrixBot:
             return
 
         logger.info(f"Message in {room.room_id} from {event.sender}: {event.body}")
+        
+        asyncio.create_task(self._mark_as_read(room.room_id, event.event_id))
 
         # Extract relations
         content = event.source.get("content", {})
