@@ -52,4 +52,4 @@ class WebSearchClient:
 
         except Exception as e:
             logger.error(f"Web search failed: {e}")
-            raise RuntimeError(f"Failed to perform web search: {str(e)}")
+            raise RuntimeError(f"Failed to perform web search: {str(e)}") from e
