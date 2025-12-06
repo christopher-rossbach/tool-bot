@@ -1,6 +1,7 @@
 """Matrix client wrapper with async event handlers."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from typing import Dict, Optional
@@ -244,7 +245,7 @@ class MatrixBot:
 
         logger.info(f"Audio message in {room.room_id} from {event.sender}")
         
-        await self._mark_as_read(room.room_id, event.event_id)
+        asyncio.create_task(self._mark_as_read(room.room_id, event.event_id))
         
         try:
             # Download audio file
@@ -391,7 +392,7 @@ class MatrixBot:
 
         logger.info(f"Message in {room.room_id} from {event.sender}: {event.body}")
         
-        await self._mark_as_read(room.room_id, event.event_id)
+        asyncio.create_task(self._mark_as_read(room.room_id, event.event_id))
 
         # Extract relations
         content = event.source.get("content", {})
