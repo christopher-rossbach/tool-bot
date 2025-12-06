@@ -138,6 +138,10 @@ class AnkiConnectClient:
         return await self._invoke("findNotes", {"query": query})
     
     async def sync(self) -> None:
-        """Trigger sync with AnkiWeb."""
+        """Trigger sync with AnkiWeb.
+        
+        Note: This will fail if AnkiWeb credentials are not configured in Anki
+        or if there are network connectivity issues.
+        """
         await self._invoke("sync")
         logger.info("Triggered Anki sync to AnkiWeb")
