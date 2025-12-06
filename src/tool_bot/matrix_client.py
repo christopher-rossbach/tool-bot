@@ -569,6 +569,49 @@ class MatrixBot:
                             is_bot_message=True,
                         )
                         tree.nodes[resp.event_id].tool_proposal = td
+            elif tool_call.tool_name == "web_search":
+                query = tool_call.arguments.get("query", "")
+                max_results = tool_call.arguments.get("max_results", 5)
+                
+                try:
+                    from tool_bot.web_search_client import WebSearchClient
+                    search_client = WebSearchClient()
+                    results = await search_client.search(query=query, max_results=max_results)
+                    
+                    if results:
+                        body = f"🔍 **Web Search Results for: {query}**\n\n"
+                        for i, result in enumerate(results, 1):
+                            body += f"{i}. **{result['title']}**\n"
+                            body += f"   {result['body']}\n"
+                            body += f"   {result['href']}\n\n"
+                    else:
+                        body = f"🔍 No search results found for: {query}"
+                    
+                except Exception as e:
+                    logger.error(f"Web search failed: {e}")
+                    body = f"❌ Web search failed: {e}"
+                
+                content = {
+                    "msgtype": "m.text",
+                    "body": body,
+                    "m.relates_to": {
+                        "m.in_reply_to": {"event_id": trigger_event_id},
+                    },
+                }
+                resp = await self.client.room_send(
+                    room_id=room_id,
+                    message_type="m.room.message",
+                    content=content,
+                )
+                if hasattr(resp, "event_id"):
+                    tree.add_message(
+                        event_id=resp.event_id,
+                        sender=self.bot_user_id or "",
+                        content=body,
+                        timestamp=timestamp,
+                        reply_to=trigger_event_id,
+                        is_bot_message=True,
+                    )
 
     async def _execute_proposal(self, room_id: str, proposal_event_id: str, proposal_node: MessageNode, user_id: str, timestamp: int) -> None:
         """Execute a tool proposal (flashcard or todo) when approved by user."""

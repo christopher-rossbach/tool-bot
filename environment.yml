@@ -1,0 +1,17 @@
+name: tool-bot
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python>=3.9
+  - pip
+  - pip:
+    - matrix-nio>=0.23.0
+    - httpx>=0.27.0
+    - pydantic>=2.6.0
+    - openai>=1.0.0
+    - anthropic>=0.40.0
+    - openai-whisper>=20231117
+    - uvloop>=0.20.0
+    - python-dotenv>=1.0.1
+    - duckduckgo-search>=8.1.0

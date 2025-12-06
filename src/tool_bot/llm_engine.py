@@ -40,6 +40,17 @@ class TodoCreate(BaseModel):
     )
 
 
+class WebSearch(BaseModel):
+    """Schema for performing a web search."""
+    query: str = Field(description="Search query to look up on the web")
+    max_results: int = Field(
+        description="Maximum number of results to return (1-10)", 
+        default=5,
+        ge=1,
+        le=10
+    )
+
+
 class ToolCall(BaseModel):
     """Represents a tool call from the LLM."""
     tool_name: str
@@ -103,6 +114,30 @@ class LLMEngine:
                             "required": ["todos"]
                         }
                     }
+                },
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "web_search",
+                        "description": "Search the web for current information using DuckDuckGo. Use this when you need up-to-date information, facts, or details that you don't have in your training data.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "query": {
+                                    "type": "string",
+                                    "description": "The search query to look up on the web"
+                                },
+                                "max_results": {
+                                    "type": "integer",
+                                    "description": "Maximum number of results to return (1-10)",
+                                    "default": 5,
+                                    "minimum": 1,
+                                    "maximum": 10
+                                }
+                            },
+                            "required": ["query"]
+                        }
+                    }
                 }
             ]
         else:  # Anthropic
@@ -135,6 +170,27 @@ class LLMEngine:
                             }
                         },
                         "required": ["todos"]
+                    }
+                },
+                {
+                    "name": "web_search",
+                    "description": "Search the web for current information using DuckDuckGo. Use this when you need up-to-date information, facts, or details that you don't have in your training data.",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "The search query to look up on the web"
+                            },
+                            "max_results": {
+                                "type": "integer",
+                                "description": "Maximum number of results to return (1-10)",
+                                "default": 5,
+                                "minimum": 1,
+                                "maximum": 10
+                            }
+                        },
+                        "required": ["query"]
                     }
                 }
             ]
