@@ -634,45 +634,140 @@ class MatrixBot:
                         tree.nodes[resp.event_id].tool_proposal = td
             elif tool_call.tool_name == "web_search":
                 query = tool_call.arguments.get("query", "")
-                max_results = tool_call.arguments.get("max_results", 5)
+                max_results = tool_call.arguments.get("max_results", 3)
 
-                try:
-                    results = await self.web_search.search(
-                        query=query, max_results=max_results
-                    )
-
-                    if results:
-                        body = f"🔍 **Web Search Results for: {query}**\n\n"
-                        for i, result in enumerate(results, 1):
-                            body += f"{i}. **{result['title']}**\n"
-                            body += f"   {result['body']}\n"
-                            body += f"   {result['href']}\n\n"
-                    else:
-                        body = f"🔍 No search results found for: {query}"
-
-                except Exception as e:
-                    logger.error(f"Web search failed: {e}")
-                    body = f"❌ Web search failed: {e}"
-
-                content = {
+                # Step 1: Send initial message indicating tool use
+                initial_body = f"🔍 Searching the web for: **{query}**\n\nFetching and analyzing results..."
+                initial_content = {
                     "msgtype": "m.text",
-                    "body": body,
+                    "body": initial_body,
                     "m.relates_to": {
                         "m.in_reply_to": {"event_id": trigger_event_id},
                     },
                 }
-                resp = await self.client.room_send(
+                initial_resp = await self.client.room_send(
                     room_id=room_id,
                     message_type="m.room.message",
-                    content=content,
+                    content=initial_content,
                 )
-                if hasattr(resp, "event_id"):
+
+                initial_event_id = None
+                if hasattr(initial_resp, "event_id"):
+                    initial_event_id = initial_resp.event_id
                     tree.add_message(
-                        event_id=resp.event_id,
+                        event_id=initial_event_id,
                         sender=self.bot_user_id or "",
-                        content=body,
+                        content=initial_body,
                         timestamp=timestamp,
                         reply_to=trigger_event_id,
+                        is_bot_message=True,
+                    )
+
+                try:
+                    # Step 2: Perform web search
+                    results = await self.web_search.search(
+                        query=query, max_results=max_results
+                    )
+
+                    if not results:
+                        final_body = f"No search results found for: {query}"
+                    else:
+                        # Step 3: Fetch webpage content for top results
+                        webpage_contents = []
+                        for i, result in enumerate(results[:3]):
+                            try:
+                                content_text = (
+                                    await self.web_search.fetch_webpage_content(
+                                        result["href"]
+                                    )
+                                )
+                                webpage_contents.append(
+                                    {
+                                        "title": result["title"],
+                                        "url": result["href"],
+                                        "snippet": result["body"],
+                                        "content": content_text,
+                                    }
+                                )
+                                logger.info(
+                                    f"Fetched content from {result['href'][:100]}"
+                                )
+                            except Exception as e:
+                                logger.warning(
+                                    f"Failed to fetch content from {result['href']}: {e}"
+                                )
+                                continue
+
+                        if not webpage_contents:
+                            final_body = f"Found search results but could not fetch webpage content."
+                        else:
+                            # Step 4: Use LLM to extract relevant information
+                            extraction_prompt = (
+                                f"The user asked: {query}\n\n"
+                                f"I searched the web and found {len(webpage_contents)} relevant webpages. "
+                                f"Please extract and synthesize the most relevant information to answer the user's question. "
+                                f"Be concise and focus on key facts.\n\n"
+                            )
+
+                            for idx, page in enumerate(webpage_contents, 1):
+                                extraction_prompt += (
+                                    f"### Source {idx}: {page['title']}\n"
+                                )
+                                extraction_prompt += f"URL: {page['url']}\n"
+                                extraction_prompt += f"Snippet: {page['snippet']}\n"
+                                extraction_prompt += (
+                                    f"Content excerpt: {page['content'][:2000]}...\n\n"
+                                )
+
+                            # Call LLM to extract information
+                            system_prompt = (
+                                "You are a helpful assistant that extracts and synthesizes information from web search results. "
+                                "Provide clear, concise answers based on the provided content. "
+                                "Always cite your sources by mentioning the source number (e.g., 'According to Source 1...')."
+                            )
+
+                            extraction_messages = [
+                                {"role": "user", "content": extraction_prompt}
+                            ]
+
+                            extracted_text, _ = await self.llm.process_message(
+                                system_prompt, extraction_messages, enable_tools=False
+                            )
+
+                            if extracted_text:
+                                final_body = f"📊 **Web Search Results**\n\n{extracted_text}\n\n---\n**Sources:**\n"
+                                for idx, page in enumerate(webpage_contents, 1):
+                                    final_body += (
+                                        f"{idx}. [{page['title']}]({page['url']})\n"
+                                    )
+                            else:
+                                final_body = "Could not extract information from the search results."
+
+                except Exception as e:
+                    logger.error(f"Web search processing failed: {e}")
+                    final_body = f"❌ Web search failed: {str(e)}"
+
+                # Step 5: Send final reply to the initial tool message
+                reply_to_id = initial_event_id if initial_event_id else trigger_event_id
+                final_content = {
+                    "msgtype": "m.text",
+                    "body": final_body,
+                    "m.relates_to": {
+                        "m.in_reply_to": {"event_id": reply_to_id},
+                    },
+                }
+                final_resp = await self.client.room_send(
+                    room_id=room_id,
+                    message_type="m.room.message",
+                    content=final_content,
+                )
+                if hasattr(final_resp, "event_id"):
+                    tree.add_message(
+                        event_id=final_resp.event_id,
+                        sender=self.bot_user_id or "",
+                        content=final_body,
+                        timestamp=timestamp,
+                        reply_to=reply_to_id,
                         is_bot_message=True,
                     )
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List
 
+import httpx
 from duckduckgo_search import DDGS
 
 logger = logging.getLogger(__name__)
@@ -12,6 +13,9 @@ logger = logging.getLogger(__name__)
 
 class WebSearchClient:
     """Client for performing web searches using DuckDuckGo."""
+
+    def __init__(self):
+        self.timeout = 10.0
 
     async def search(
         self,
@@ -53,3 +57,36 @@ class WebSearchClient:
         except Exception as e:
             logger.error(f"Web search failed: {e}")
             raise RuntimeError(f"Failed to perform web search: {str(e)}") from e
+
+    async def fetch_webpage_content(self, url: str) -> str:
+        """
+        Fetch content from a webpage.
+
+        Args:
+            url: URL of the webpage to fetch
+
+        Returns:
+            Text content of the webpage (limited to first 10000 characters)
+
+        Raises:
+            RuntimeError: If fetching fails
+        """
+        try:
+            async with httpx.AsyncClient(
+                timeout=self.timeout, follow_redirects=True
+            ) as client:
+                response = await client.get(url)
+                response.raise_for_status()
+
+                content_type = response.headers.get("content-type", "")
+                if "text/html" not in content_type and "text/plain" not in content_type:
+                    raise RuntimeError(f"Unsupported content type: {content_type}")
+
+                text_content = response.text[:10000]
+
+                logger.info(f"Fetched {len(text_content)} characters from {url}")
+                return text_content
+
+        except Exception as e:
+            logger.error(f"Failed to fetch webpage {url}: {e}")
+            raise RuntimeError(f"Failed to fetch webpage: {str(e)}") from e
