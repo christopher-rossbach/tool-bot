@@ -218,7 +218,14 @@ class WebSearchClient:
                     )
                     extraction_prompt += f"URL: {page['url']}\n"
                     extraction_prompt += f"Snippet: {page['snippet']}\n"
-                    extraction_prompt += f"Content excerpt: {page['content'][:self.MAX_EXCERPT_LENGTH]}...\n\n"
+
+                    content_excerpt = page["content"][: self.MAX_EXCERPT_LENGTH]
+                    ellipsis = (
+                        "..." if len(page["content"]) > self.MAX_EXCERPT_LENGTH else ""
+                    )
+                    extraction_prompt += (
+                        f"Content excerpt: {content_excerpt}{ellipsis}\n\n"
+                    )
 
                     source_map[source_counter] = {
                         "title": page["title"],
