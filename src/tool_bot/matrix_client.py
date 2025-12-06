@@ -695,135 +695,26 @@ class MatrixBot:
                 is_bot_message=True,
             )
 
-        # Step 2: Process all searches and collect results
-        all_search_results = []
+        # Step 2: Execute all searches and collect results
+        search_queries = [
+            {
+                "query": call.arguments.get("query", ""),
+                "max_results": call.arguments.get("max_results", 3),
+            }
+            for call in web_search_calls
+        ]
 
-        for tool_call in web_search_calls:
-            query = tool_call.arguments.get("query", "")
-            max_results = tool_call.arguments.get("max_results", 3)
+        all_search_results = await self.web_search.execute_searches(search_queries)
 
-            try:
-                # Perform web search
-                results = await self.web_search.search(
-                    query=query, max_results=max_results
-                )
-
-                if not results:
-                    all_search_results.append(
-                        {
-                            "query": query,
-                            "status": "no_results",
-                            "message": f"No search results found for: {query}",
-                        }
-                    )
-                    continue
-
-                # Fetch webpage content for top results
-                webpage_contents = []
-                for i, result in enumerate(results[:max_results]):
-                    try:
-                        content_text = await self.web_search.fetch_webpage_content(
-                            result["href"]
-                        )
-                        webpage_contents.append(
-                            {
-                                "title": result["title"],
-                                "url": result["href"],
-                                "snippet": result["body"],
-                                "content": content_text,
-                            }
-                        )
-                        logger.info(f"Fetched content from {result['href'][:100]}")
-                    except Exception as e:
-                        logger.warning(
-                            f"Failed to fetch content from {result['href']}: {e}"
-                        )
-                        continue
-
-                if not webpage_contents:
-                    all_search_results.append(
-                        {
-                            "query": query,
-                            "status": "fetch_failed",
-                            "message": f"Found search results but could not fetch webpage content.",
-                        }
-                    )
-                else:
-                    all_search_results.append(
-                        {
-                            "query": query,
-                            "status": "success",
-                            "webpages": webpage_contents,
-                        }
-                    )
-
-            except Exception as e:
-                logger.error(f"Web search processing failed for '{query}': {e}")
-                all_search_results.append(
-                    {
-                        "query": query,
-                        "status": "error",
-                        "message": f"❌ Search failed: {str(e)}",
-                    }
-                )
-
-        # Step 3: Use LLM to extract and synthesize information from all searches
+        # Step 3: Use LLM to extract and synthesize information
         try:
             if not any(r.get("status") == "success" for r in all_search_results):
-                # All searches failed
                 final_body = "❌ All web searches failed or returned no usable results."
             else:
-                # Build extraction prompt with all successful searches
-                num_queries = len(
-                    [r for r in all_search_results if r.get("status") == "success"]
+                # Build extraction prompt
+                extraction_prompt, source_map = self.web_search.build_extraction_prompt(
+                    all_search_results
                 )
-
-                if num_queries == 1:
-                    extraction_prompt = (
-                        "The user asked a question that required a web search:\n\n"
-                    )
-                else:
-                    extraction_prompt = f"The user asked {num_queries} questions that required web searches:\n\n"
-
-                source_counter = 1
-                source_map = {}  # Maps source number to page info dict
-
-                for search_result in all_search_results:
-                    if search_result.get("status") == "success":
-                        query = search_result["query"]
-                        webpages = search_result["webpages"]
-
-                        extraction_prompt += f"**Query: {query}**\n"
-                        extraction_prompt += (
-                            f"Found {len(webpages)} relevant webpages:\n\n"
-                        )
-
-                        for page in webpages:
-                            extraction_prompt += (
-                                f"### Source {source_counter}: {page['title']}\n"
-                            )
-                            extraction_prompt += f"URL: {page['url']}\n"
-                            extraction_prompt += f"Snippet: {page['snippet']}\n"
-                            max_excerpt = self.web_search.MAX_EXCERPT_LENGTH
-                            extraction_prompt += f"Content excerpt: {page['content'][:max_excerpt]}...\n\n"
-
-                            source_map[source_counter] = {
-                                "title": page["title"],
-                                "url": page["url"],
-                            }
-                            source_counter += 1
-
-                if num_queries == 1:
-                    extraction_prompt += (
-                        "\nPlease extract and synthesize the most relevant information to answer the query. "
-                        "Cite your sources by mentioning the source number (e.g., 'According to Source 1...')."
-                    )
-                else:
-                    extraction_prompt += (
-                        "\nPlease extract and synthesize the most relevant information to answer each query. "
-                        "Be clear about which query each piece of information addresses. "
-                        "Cite your sources by mentioning the source number (e.g., 'According to Source 1...')."
-                    )
 
                 # Call LLM to extract information
                 system_prompt = (
@@ -839,9 +730,9 @@ class MatrixBot:
                 )
 
                 if extracted_text:
-                    final_body = f"📊 **Web Search Results**\n\n{extracted_text}\n\n---\n**Sources:**\n"
-                    for source_num, page_info in source_map.items():
-                        final_body += f"{source_num}. [{page_info['title']}]({page_info['url']})\n"
+                    final_body = self.web_search.format_search_results(
+                        extracted_text, source_map
+                    )
                 else:
                     final_body = (
                         "Could not extract information from the search results."
