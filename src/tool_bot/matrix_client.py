@@ -567,7 +567,18 @@ class MatrixBot:
         self, room_id: str, trigger_event_id: str, tool_calls, tree, timestamp: int
     ):
         """Send tool proposals as replies to messages."""
+        # Separate web_search calls from other tool calls
+        web_search_calls = []
+        other_tool_calls = []
+
         for tool_call in tool_calls:
+            if tool_call.tool_name == "web_search":
+                web_search_calls.append(tool_call)
+            else:
+                other_tool_calls.append(tool_call)
+
+        # Process non-web-search tools individually (flashcards, todos, etc.)
+        for tool_call in other_tool_calls:
             if tool_call.tool_name == "create_flashcards":
                 for fc in tool_call.arguments.get("flashcards", []):
                     body = (
@@ -632,143 +643,223 @@ class MatrixBot:
                             is_bot_message=True,
                         )
                         tree.nodes[resp.event_id].tool_proposal = td
-            elif tool_call.tool_name == "web_search":
-                query = tool_call.arguments.get("query", "")
-                max_results = tool_call.arguments.get("max_results", 3)
 
-                # Step 1: Send initial message indicating tool use
-                initial_body = f"🔍 Searching the web for: **{query}**\n\nFetching and analyzing results..."
-                initial_content = {
-                    "msgtype": "m.text",
-                    "body": initial_body,
-                    "m.relates_to": {
-                        "m.in_reply_to": {"event_id": trigger_event_id},
-                    },
-                }
-                initial_resp = await self.client.room_send(
-                    room_id=room_id,
-                    message_type="m.room.message",
-                    content=initial_content,
+        # Process all web_search calls together in a single response
+        if web_search_calls:
+            await self._handle_web_searches(
+                room_id, trigger_event_id, web_search_calls, tree, timestamp
+            )
+
+    async def _handle_web_searches(
+        self,
+        room_id: str,
+        trigger_event_id: str,
+        web_search_calls,
+        tree,
+        timestamp: int,
+    ):
+        """Handle multiple web search calls in a single consolidated response."""
+        # Step 1: Send initial message indicating all searches
+        queries = [call.arguments.get("query", "") for call in web_search_calls]
+
+        if len(queries) == 1:
+            initial_body = f"🔍 Searching the web for: **{queries[0]}**\n\nFetching and analyzing results..."
+        else:
+            initial_body = f"🔍 Searching the web for {len(queries)} queries:\n"
+            for i, query in enumerate(queries, 1):
+                initial_body += f"  {i}. **{query}**\n"
+            initial_body += "\nFetching and analyzing results..."
+
+        initial_content = {
+            "msgtype": "m.text",
+            "body": initial_body,
+            "m.relates_to": {
+                "m.in_reply_to": {"event_id": trigger_event_id},
+            },
+        }
+        initial_resp = await self.client.room_send(
+            room_id=room_id,
+            message_type="m.room.message",
+            content=initial_content,
+        )
+
+        initial_event_id = None
+        if hasattr(initial_resp, "event_id"):
+            initial_event_id = initial_resp.event_id
+            tree.add_message(
+                event_id=initial_event_id,
+                sender=self.bot_user_id or "",
+                content=initial_body,
+                timestamp=timestamp,
+                reply_to=trigger_event_id,
+                is_bot_message=True,
+            )
+
+        # Step 2: Process all searches and collect results
+        all_search_results = []
+
+        for tool_call in web_search_calls:
+            query = tool_call.arguments.get("query", "")
+            max_results = tool_call.arguments.get("max_results", 3)
+
+            try:
+                # Perform web search
+                results = await self.web_search.search(
+                    query=query, max_results=max_results
                 )
 
-                initial_event_id = None
-                if hasattr(initial_resp, "event_id"):
-                    initial_event_id = initial_resp.event_id
-                    tree.add_message(
-                        event_id=initial_event_id,
-                        sender=self.bot_user_id or "",
-                        content=initial_body,
-                        timestamp=timestamp,
-                        reply_to=trigger_event_id,
-                        is_bot_message=True,
+                if not results:
+                    all_search_results.append(
+                        {
+                            "query": query,
+                            "status": "no_results",
+                            "message": f"No search results found for: {query}",
+                        }
+                    )
+                    continue
+
+                # Fetch webpage content for top results
+                webpage_contents = []
+                for i, result in enumerate(results[:max_results]):
+                    try:
+                        content_text = await self.web_search.fetch_webpage_content(
+                            result["href"]
+                        )
+                        webpage_contents.append(
+                            {
+                                "title": result["title"],
+                                "url": result["href"],
+                                "snippet": result["body"],
+                                "content": content_text,
+                            }
+                        )
+                        logger.info(f"Fetched content from {result['href'][:100]}")
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to fetch content from {result['href']}: {e}"
+                        )
+                        continue
+
+                if not webpage_contents:
+                    all_search_results.append(
+                        {
+                            "query": query,
+                            "status": "fetch_failed",
+                            "message": f"Found search results but could not fetch webpage content.",
+                        }
+                    )
+                else:
+                    all_search_results.append(
+                        {
+                            "query": query,
+                            "status": "success",
+                            "webpages": webpage_contents,
+                        }
                     )
 
-                try:
-                    # Step 2: Perform web search
-                    results = await self.web_search.search(
-                        query=query, max_results=max_results
-                    )
-
-                    if not results:
-                        final_body = f"No search results found for: {query}"
-                    else:
-                        # Step 3: Fetch webpage content for top results
-                        webpage_contents = []
-                        for i, result in enumerate(results[:max_results]):
-                            try:
-                                content_text = (
-                                    await self.web_search.fetch_webpage_content(
-                                        result["href"]
-                                    )
-                                )
-                                webpage_contents.append(
-                                    {
-                                        "title": result["title"],
-                                        "url": result["href"],
-                                        "snippet": result["body"],
-                                        "content": content_text,
-                                    }
-                                )
-                                logger.info(
-                                    f"Fetched content from {result['href'][:100]}"
-                                )
-                            except Exception as e:
-                                logger.warning(
-                                    f"Failed to fetch content from {result['href']}: {e}"
-                                )
-                                continue
-
-                        if not webpage_contents:
-                            final_body = f"Found search results but could not fetch webpage content."
-                        else:
-                            # Step 4: Use LLM to extract relevant information
-                            extraction_prompt = (
-                                f"The user asked: {query}\n\n"
-                                f"I searched the web and found {len(webpage_contents)} relevant webpages. "
-                                f"Please extract and synthesize the most relevant information to answer the user's question. "
-                                f"Be concise and focus on key facts.\n\n"
-                            )
-
-                            for idx, page in enumerate(webpage_contents, 1):
-                                extraction_prompt += (
-                                    f"### Source {idx}: {page['title']}\n"
-                                )
-                                extraction_prompt += f"URL: {page['url']}\n"
-                                extraction_prompt += f"Snippet: {page['snippet']}\n"
-                                max_excerpt = self.web_search.MAX_EXCERPT_LENGTH
-                                extraction_prompt += f"Content excerpt: {page['content'][:max_excerpt]}...\n\n"
-
-                            # Call LLM to extract information
-                            system_prompt = (
-                                "You are a helpful assistant that extracts and synthesizes information from web search results. "
-                                "Provide clear, concise answers based on the provided content. "
-                                "Always cite your sources by mentioning the source number (e.g., 'According to Source 1...')."
-                            )
-
-                            extraction_messages = [
-                                {"role": "user", "content": extraction_prompt}
-                            ]
-
-                            extracted_text, _ = await self.llm.process_message(
-                                system_prompt, extraction_messages, enable_tools=False
-                            )
-
-                            if extracted_text:
-                                final_body = f"📊 **Web Search Results**\n\n{extracted_text}\n\n---\n**Sources:**\n"
-                                for idx, page in enumerate(webpage_contents, 1):
-                                    final_body += (
-                                        f"{idx}. [{page['title']}]({page['url']})\n"
-                                    )
-                            else:
-                                final_body = "Could not extract information from the search results."
-
-                except Exception as e:
-                    logger.error(f"Web search processing failed: {e}")
-                    final_body = f"❌ Web search failed: {str(e)}"
-
-                # Step 5: Send final reply to the initial tool message
-                reply_to_id = initial_event_id if initial_event_id else trigger_event_id
-                final_content = {
-                    "msgtype": "m.text",
-                    "body": final_body,
-                    "m.relates_to": {
-                        "m.in_reply_to": {"event_id": reply_to_id},
-                    },
-                }
-                final_resp = await self.client.room_send(
-                    room_id=room_id,
-                    message_type="m.room.message",
-                    content=final_content,
+            except Exception as e:
+                logger.error(f"Web search processing failed for '{query}': {e}")
+                all_search_results.append(
+                    {
+                        "query": query,
+                        "status": "error",
+                        "message": f"❌ Search failed: {str(e)}",
+                    }
                 )
-                if hasattr(final_resp, "event_id"):
-                    tree.add_message(
-                        event_id=final_resp.event_id,
-                        sender=self.bot_user_id or "",
-                        content=final_body,
-                        timestamp=timestamp,
-                        reply_to=reply_to_id,
-                        is_bot_message=True,
+
+        # Step 3: Use LLM to extract and synthesize information from all searches
+        try:
+            if not any(r.get("status") == "success" for r in all_search_results):
+                # All searches failed
+                final_body = "❌ All web searches failed or returned no usable results."
+            else:
+                # Build extraction prompt with all successful searches
+                extraction_prompt = (
+                    "The user asked multiple questions that required web searches:\n\n"
+                )
+
+                source_counter = 1
+                source_map = {}  # Maps source number to (query_idx, page_idx)
+
+                for search_result in all_search_results:
+                    if search_result.get("status") == "success":
+                        query = search_result["query"]
+                        webpages = search_result["webpages"]
+
+                        extraction_prompt += f"**Query: {query}**\n"
+                        extraction_prompt += (
+                            f"Found {len(webpages)} relevant webpages:\n\n"
+                        )
+
+                        for page in webpages:
+                            extraction_prompt += (
+                                f"### Source {source_counter}: {page['title']}\n"
+                            )
+                            extraction_prompt += f"URL: {page['url']}\n"
+                            extraction_prompt += f"Snippet: {page['snippet']}\n"
+                            max_excerpt = self.web_search.MAX_EXCERPT_LENGTH
+                            extraction_prompt += f"Content excerpt: {page['content'][:max_excerpt]}...\n\n"
+
+                            source_map[source_counter] = (query, page)
+                            source_counter += 1
+
+                extraction_prompt += (
+                    "\nPlease extract and synthesize the most relevant information to answer each query. "
+                    "Be clear about which query each piece of information addresses. "
+                    "Cite your sources by mentioning the source number (e.g., 'According to Source 1...')."
+                )
+
+                # Call LLM to extract information
+                system_prompt = (
+                    "You are a helpful assistant that extracts and synthesizes information from web search results. "
+                    "Provide clear, concise answers based on the provided content. "
+                    "Always cite your sources by mentioning the source number."
+                )
+
+                extraction_messages = [{"role": "user", "content": extraction_prompt}]
+
+                extracted_text, _ = await self.llm.process_message(
+                    system_prompt, extraction_messages, enable_tools=False
+                )
+
+                if extracted_text:
+                    final_body = f"📊 **Web Search Results**\n\n{extracted_text}\n\n---\n**Sources:**\n"
+                    for source_num, (query, page) in source_map.items():
+                        final_body += (
+                            f"{source_num}. [{page['title']}]({page['url']})\n"
+                        )
+                else:
+                    final_body = (
+                        "Could not extract information from the search results."
                     )
+
+        except Exception as e:
+            logger.error(f"LLM extraction failed: {e}")
+            final_body = f"❌ Failed to process search results: {str(e)}"
+
+        # Step 4: Send final consolidated reply
+        reply_to_id = initial_event_id if initial_event_id else trigger_event_id
+        final_content = {
+            "msgtype": "m.text",
+            "body": final_body,
+            "m.relates_to": {
+                "m.in_reply_to": {"event_id": reply_to_id},
+            },
+        }
+        final_resp = await self.client.room_send(
+            room_id=room_id,
+            message_type="m.room.message",
+            content=final_content,
+        )
+        if hasattr(final_resp, "event_id"):
+            tree.add_message(
+                event_id=final_resp.event_id,
+                sender=self.bot_user_id or "",
+                content=final_body,
+                timestamp=timestamp,
+                reply_to=reply_to_id,
+                is_bot_message=True,
+            )
 
     async def _execute_proposal(
         self,
