@@ -245,7 +245,7 @@ class MatrixBot:
 
         logger.info(f"Audio message in {room.room_id} from {event.sender}")
         
-        asyncio.create_task(self._mark_as_read(room.room_id, event.event_id))
+        await self._mark_as_read(room.room_id, event.event_id)
         
         try:
             # Download audio file
