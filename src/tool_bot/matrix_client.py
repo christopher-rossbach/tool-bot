@@ -655,6 +655,10 @@ class MatrixBot:
                         else:
                             raise ValueError(f"Unknown card_type: {card_type}")
                         reply_body = f"✅ Flashcard created in Anki (note id: {note_id})"
+                        try:
+                            await anki.sync()
+                        except Exception as sync_error:
+                            logger.warning(f"Anki sync to AnkiWeb failed (flashcard was still created): {sync_error}")
                     except Exception as anki_error:
                         logger.error(f"Anki-Connect error: {anki_error}")
                         reply_body = (
