@@ -15,6 +15,7 @@ from nio import (
     RoomMessageNotice,
     RedactionEvent,
     RoomMessagesResponse,
+    RoomMemberEvent,
     SyncResponse,
 )
 
@@ -113,6 +114,7 @@ class MatrixBot:
         self.client.add_event_callback(self.on_reaction, ReactionEvent)
         self.client.add_event_callback(self.on_redaction, RedactionEvent)
         self.client.add_event_callback(self.on_invite, InviteEvent)
+        self.client.add_event_callback(self.on_member_event, RoomMemberEvent)
 
         # Login
         if self.config.matrix_access_token:
@@ -215,6 +217,46 @@ class MatrixBot:
             await self._load_room_history(room.room_id)
             # Set default system prompt in room topic if empty
             await self._ensure_room_prompt(room.room_id)
+
+    async def on_member_event(self, room, event: RoomMemberEvent) -> None:
+        """Handle room membership events.
+        
+        Leave the room if the bot is the only member remaining.
+        """
+        if not self.client:
+            return
+        
+        # Skip during initial sync to avoid leaving rooms prematurely
+        if self.is_initial_sync:
+            return
+        
+        # Only check when someone leaves (not joins or other membership changes)
+        if event.membership != "leave" and event.membership != "ban":
+            return
+        
+        # Don't check if the bot itself is leaving
+        if event.state_key == self.bot_user_id:
+            return
+        
+        try:
+            # Get current joined members in the room
+            room_obj = self.client.rooms.get(room.room_id)
+            if not room_obj:
+                return
+            
+            # Count members excluding the bot
+            other_members = [
+                user_id for user_id in room_obj.users
+                if user_id != self.bot_user_id
+            ]
+            
+            if len(other_members) == 0:
+                logger.info(f"Bot is alone in room {room.room_id}, leaving...")
+                await self.client.room_leave(room.room_id)
+                logger.info(f"Left room {room.room_id}")
+        except Exception as e:
+            logger.error(f"Error checking room members in {room.room_id}: {e}")
+
     async def on_audio(self, room, event: RoomMessageAudio) -> None:
         """Handle audio/voice messages."""
         if event.sender == self.bot_user_id:
