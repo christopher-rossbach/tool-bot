@@ -245,6 +245,7 @@ class MatrixBot:
 
         logger.info(f"Audio message in {room.room_id} from {event.sender}")
         
+        # Use await (not create_task) to ensure completion before early returns
         await self._mark_as_read(room.room_id, event.event_id)
         
         try:
