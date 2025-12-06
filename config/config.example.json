@@ -1,0 +1,32 @@
+{
+  "matrix_homeserver": "https://matrix.org",
+  "matrix_user": "@bot:example.org",
+  "matrix_password": "your_password_here",
+  "matrix_access_token": null,
+  "allowed_users": [
+    "@user1:example.org",
+    "@user2:example.org"
+  ],
+  "llm_provider": "openai",
+  "openai_api_key": "sk-...",
+  "anthropic_api_key": null,
+  "todoist_token": "your_todoist_token_here",
+  "whisper_model": "base",
+  "whisper_model_examples": [
+    "tiny",
+    "tiny.en",
+    "base",
+    "base.en",
+    "small",
+    "small.en",
+    "medium",
+    "medium.en",
+    "large-v1",
+    "large-v2",
+    "large-v3",
+    "large"
+  ],
+  "enable_e2ee": false,
+  "enable_anki": true,
+  "anki_connect_url": "http://anki-connect:8765"
+}
