@@ -774,12 +774,19 @@ class MatrixBot:
                 final_body = "❌ All web searches failed or returned no usable results."
             else:
                 # Build extraction prompt with all successful searches
-                extraction_prompt = (
-                    "The user asked multiple questions that required web searches:\n\n"
+                num_queries = len(
+                    [r for r in all_search_results if r.get("status") == "success"]
                 )
 
+                if num_queries == 1:
+                    extraction_prompt = (
+                        "The user asked a question that required a web search:\n\n"
+                    )
+                else:
+                    extraction_prompt = f"The user asked {num_queries} questions that required web searches:\n\n"
+
                 source_counter = 1
-                source_map = {}  # Maps source number to (query_idx, page_idx)
+                source_map = {}  # Maps source number to page info dict
 
                 for search_result in all_search_results:
                     if search_result.get("status") == "success":
@@ -800,14 +807,23 @@ class MatrixBot:
                             max_excerpt = self.web_search.MAX_EXCERPT_LENGTH
                             extraction_prompt += f"Content excerpt: {page['content'][:max_excerpt]}...\n\n"
 
-                            source_map[source_counter] = (query, page)
+                            source_map[source_counter] = {
+                                "title": page["title"],
+                                "url": page["url"],
+                            }
                             source_counter += 1
 
-                extraction_prompt += (
-                    "\nPlease extract and synthesize the most relevant information to answer each query. "
-                    "Be clear about which query each piece of information addresses. "
-                    "Cite your sources by mentioning the source number (e.g., 'According to Source 1...')."
-                )
+                if num_queries == 1:
+                    extraction_prompt += (
+                        "\nPlease extract and synthesize the most relevant information to answer the query. "
+                        "Cite your sources by mentioning the source number (e.g., 'According to Source 1...')."
+                    )
+                else:
+                    extraction_prompt += (
+                        "\nPlease extract and synthesize the most relevant information to answer each query. "
+                        "Be clear about which query each piece of information addresses. "
+                        "Cite your sources by mentioning the source number (e.g., 'According to Source 1...')."
+                    )
 
                 # Call LLM to extract information
                 system_prompt = (
@@ -824,10 +840,8 @@ class MatrixBot:
 
                 if extracted_text:
                     final_body = f"📊 **Web Search Results**\n\n{extracted_text}\n\n---\n**Sources:**\n"
-                    for source_num, (query, page) in source_map.items():
-                        final_body += (
-                            f"{source_num}. [{page['title']}]({page['url']})\n"
-                        )
+                    for source_num, page_info in source_map.items():
+                        final_body += f"{source_num}. [{page_info['title']}]({page_info['url']})\n"
                 else:
                     final_body = (
                         "Could not extract information from the search results."
