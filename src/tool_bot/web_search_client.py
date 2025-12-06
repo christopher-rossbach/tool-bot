@@ -5,14 +5,13 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List
 
+from duckduckgo_search import DDGS
+
 logger = logging.getLogger(__name__)
 
 
 class WebSearchClient:
     """Client for performing web searches using DuckDuckGo."""
-
-    def __init__(self):
-        pass
 
     async def search(
         self,
@@ -28,10 +27,11 @@ class WebSearchClient:
 
         Returns:
             List of search results with title, body, and href
+
+        Raises:
+            RuntimeError: If the search operation fails
         """
         try:
-            from duckduckgo_search import DDGS
-
             with DDGS() as ddgs:
                 results = ddgs.text(keywords=query, max_results=max_results)
 
@@ -52,4 +52,4 @@ class WebSearchClient:
 
         except Exception as e:
             logger.error(f"Web search failed: {e}")
-            raise Exception(f"Failed to perform web search: {str(e)}")
+            raise RuntimeError(f"Failed to perform web search: {str(e)}")
