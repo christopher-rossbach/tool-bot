@@ -305,15 +305,34 @@ class MatrixBot:
         if not self.client:
             return
         
-        # Check all rooms for topic changes
-        for room_id, room in self.client.rooms.items():
+        # Only check rooms that were included in this sync response for efficiency
+        rooms_to_check = set()
+        if hasattr(response, 'rooms'):
+            if hasattr(response.rooms, 'join'):
+                rooms_to_check.update(response.rooms.join.keys())
+            if hasattr(response.rooms, 'invite'):
+                rooms_to_check.update(response.rooms.invite.keys())
+        
+        # Fall back to checking all rooms if we can't determine which were updated
+        if not rooms_to_check:
+            rooms_to_check = set(self.client.rooms.keys())
+        
+        # Check rooms for topic changes
+        for room_id in rooms_to_check:
+            room = self.client.rooms.get(room_id)
             current_topic = room.topic if room else None
             previous_topic = self.room_topics.get(room_id)
             
             # If topic changed and it's not the first time we're seeing this room
             if room_id in self.room_topics and current_topic != previous_topic:
-                topic_preview = current_topic[:MAX_TOPIC_LOG_LENGTH] if current_topic else '(empty)'
-                logger.info(f"Room topic changed in {room_id}: {topic_preview}...")
+                # Safely truncate topic for logging, respecting Unicode boundaries
+                if current_topic:
+                    topic_preview = current_topic[:MAX_TOPIC_LOG_LENGTH]
+                    if len(current_topic) > MAX_TOPIC_LOG_LENGTH:
+                        topic_preview += "..."
+                else:
+                    topic_preview = '(empty)'
+                logger.info(f"Room topic changed in {room_id}: {topic_preview}")
             
             # Update our tracking
             self.room_topics[room_id] = current_topic
