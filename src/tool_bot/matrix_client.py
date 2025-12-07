@@ -21,6 +21,7 @@ from nio import (
     RoomMessagesResponse,
     RoomMemberEvent,
     SyncResponse,
+    Event,
 )
 
 from tool_bot.config import Config
@@ -125,6 +126,7 @@ class MatrixBot:
         self.client.add_event_callback(self.on_redaction, RedactionEvent)
         self.client.add_event_callback(self.on_invite, InviteEvent)
         self.client.add_event_callback(self.on_member_event, RoomMemberEvent)
+        self.client.add_event_callback(self.on_room_topic_event, Event)
 
         # Login
         if self.config.matrix_access_token:
@@ -279,6 +281,37 @@ class MatrixBot:
                 logger.info(f"Left room {room.room_id}")
         except Exception as e:
             logger.error(f"Error checking room members in {room.room_id}: {e}")
+
+    async def on_room_topic_event(self, room, event: Event) -> None:
+        """Handle room topic/state events.
+        
+        Detects when the room topic (description) changes and logs it.
+        Each room's system prompt is derived from its topic, so this allows
+        per-room independent system prompts.
+        """
+        if not self.client:
+            return
+        
+        # Skip during initial sync
+        if self.is_initial_sync:
+            return
+        
+        # Check if this is a room topic event
+        if not hasattr(event, 'source'):
+            return
+            
+        event_type = event.source.get('type')
+        if event_type != 'm.room.topic':
+            return
+        
+        # Get the new topic
+        content = event.source.get('content', {})
+        new_topic = content.get('topic', '')
+        
+        logger.info(f"Room topic changed in {room.room_id}: {new_topic[:100]}...")
+        
+        # The system prompt will automatically update on the next message
+        # since _get_room_prompt reads from room.topic
 
     async def _mark_as_read(self, room_id: str, event_id: str) -> None:
         """Mark a message as read by setting read markers."""
@@ -616,18 +649,55 @@ class MatrixBot:
             await self._respond_with_llm(room_id, tree, node.event_id, node.timestamp)
 
     async def _ensure_room_prompt(self, room_id: str) -> None:
-        """Set default system prompt in room topic if it's empty."""
+        """Set default system prompt in room topic if it's empty.
+        
+        If the bot lacks permissions to set the topic, it will send a message
+        to the room informing users of the issue.
+        """
         try:
             room = self.client.rooms.get(room_id)
             if room and not room.topic:
-                await self.client.room_put_state(
+                response = await self.client.room_put_state(
                     room_id=room_id,
                     event_type="m.room.topic",
                     content={"topic": self._get_default_system_prompt()},
                 )
-                logger.info(f"Set default system prompt in room topic for {room_id}")
+                
+                # Check if the request was successful
+                if hasattr(response, 'event_id'):
+                    logger.info(f"Set default system prompt in room topic for {room_id}")
+                else:
+                    logger.warning(f"Failed to set room topic for {room_id}: {response}")
+                    await self._notify_room_topic_permission_error(room_id)
         except Exception as e:
             logger.warning(f"Failed to set room topic: {e}")
+            await self._notify_room_topic_permission_error(room_id)
+    
+    async def _notify_room_topic_permission_error(self, room_id: str) -> None:
+        """Send a message to the room about lacking permission to set topic."""
+        try:
+            message = (
+                "⚠️ I don't have permission to set the room topic/description.\n\n"
+                "The room topic is used as my system prompt. "
+                "Please either:\n"
+                "1. Grant me permission to change the room topic, or\n"
+                "2. Set the room topic manually to customize my behavior for this room.\n\n"
+                "Until then, I'll use my default system prompt."
+            )
+            
+            content = {
+                "msgtype": "m.text",
+                "body": message,
+            }
+            
+            await self.client.room_send(
+                room_id=room_id,
+                message_type="m.room.message",
+                content=content,
+            )
+            logger.info(f"Sent permission error notification to room {room_id}")
+        except Exception as e:
+            logger.error(f"Failed to send notification to room {room_id}: {e}")
 
     async def _build_deck_samples(self, sample_size: int = 10) -> Dict[str, List[Dict[str, str]]]:
         if not self.config.enable_anki:
