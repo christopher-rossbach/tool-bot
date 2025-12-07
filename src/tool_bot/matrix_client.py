@@ -1298,14 +1298,32 @@ class MatrixBot:
                     content = event.source.get("content", {}) if hasattr(event, "source") else {}
                     relates_to = content.get("m.relates_to", {})
                     
-                    # Skip if this is a reply, thread message, or edit
-                    is_reply = relates_to.get("m.in_reply_to") is not None
+                    # Skip if this is a thread message or edit
                     is_thread_msg = relates_to.get("rel_type") == "m.thread"
                     is_edit = relates_to.get("rel_type") == "m.replace"
                     
-                    if is_reply or is_thread_msg or is_edit:
+                    if is_thread_msg or is_edit:
                         continue
                     
+                    # Check if this is a reply
+                    is_reply = relates_to.get("m.in_reply_to") is not None
+                    
+                    # Include root messages, plus bot's status messages from previous !clear commands
+                    if is_reply:
+                        # Check if this is a bot message that's a status message from a previous !clear
+                        is_bot_msg = hasattr(event, "sender") and event.sender == self.bot_user_id
+                        if is_bot_msg and hasattr(event, "body"):
+                            # Check if it's a clear status message
+                            is_clear_status = (
+                                "Clearing all messages in this room" in event.body or
+                                "Room cleared!" in event.body
+                            )
+                            if is_clear_status:
+                                # Include this bot status message for deletion
+                                root_messages_to_delete.append(event.event_id)
+                        continue
+                    
+                    # This is a root message, add it
                     root_messages_to_delete.append(event.event_id)
 
                 if not response.end:
@@ -1313,7 +1331,7 @@ class MatrixBot:
 
                 next_token = response.end
 
-            logger.info(f"Found {len(root_messages_to_delete)} root messages to delete (cascade will handle descendants)")
+            logger.info(f"Found {len(root_messages_to_delete)} messages to delete (root messages + bot status messages; cascade will handle descendants)")
 
             deleted_count = 0
             failed_count = 0
