@@ -1257,10 +1257,11 @@ class MatrixBot:
 
             messages_to_delete = []
             next_token = None
+            max_iterations = 1000
 
             logger.info(f"Fetching all messages in room {room_id} for deletion...")
 
-            while True:
+            for iteration in range(max_iterations):
                 response = await self.client.room_messages(
                     room_id=room_id,
                     start=next_token or "",
@@ -1329,12 +1330,19 @@ class MatrixBot:
             )
 
     async def _redact_message(self, room_id: str, event_id: str) -> None:
-        """Redact a single message."""
-        await self.client.room_redact(
-            room_id=room_id,
-            event_id=event_id,
-            reason="Room cleared by !clear command",
-        )
+        """Redact a single message.
+        
+        Raises exception if redaction fails, allowing caller to handle errors.
+        """
+        try:
+            await self.client.room_redact(
+                room_id=room_id,
+                event_id=event_id,
+                reason="Room cleared by !clear command",
+            )
+        except Exception as e:
+            logger.debug(f"Failed to redact message {event_id}: {e}")
+            raise
 
     async def stop(self) -> None:
         """Stop the client and cleanup."""
