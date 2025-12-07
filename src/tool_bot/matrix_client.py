@@ -28,6 +28,9 @@ from tool_bot.conversation import ConversationManager, MessageNode
 
 logger = logging.getLogger(__name__)
 
+# Maximum length for topic strings in log messages
+MAX_TOPIC_LOG_LENGTH = 100
+
 
 class MatrixBot:
     def __init__(self, config: Config):
@@ -309,7 +312,8 @@ class MatrixBot:
             
             # If topic changed and it's not the first time we're seeing this room
             if room_id in self.room_topics and current_topic != previous_topic:
-                logger.info(f"Room topic changed in {room_id}: {current_topic[:100] if current_topic else '(empty)'}...")
+                topic_preview = current_topic[:MAX_TOPIC_LOG_LENGTH] if current_topic else '(empty)'
+                logger.info(f"Room topic changed in {room_id}: {topic_preview}...")
             
             # Update our tracking
             self.room_topics[room_id] = current_topic
