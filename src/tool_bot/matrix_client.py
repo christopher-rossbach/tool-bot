@@ -161,6 +161,9 @@ class MatrixBot:
             await self._load_room_history(room_id)
             await self._process_pending_messages(room_id)
             
+            # Ensure room has system prompt in topic
+            await self._ensure_room_prompt(room_id)
+            
             # Initialize room topic tracking
             room = self.client.rooms.get(room_id)
             if room:
