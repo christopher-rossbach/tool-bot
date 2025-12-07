@@ -28,6 +28,9 @@ from tool_bot.conversation import ConversationManager, MessageNode
 
 logger = logging.getLogger(__name__)
 
+# Maximum length for topic strings in log messages
+MAX_TOPIC_LOG_LENGTH = 100
+
 
 class MatrixBot:
     def __init__(self, config: Config):
@@ -42,6 +45,7 @@ class MatrixBot:
         self.web_search = WebSearchClient()
         self.is_initial_sync = True
         self.whisper_model = None
+        self.room_topics: Dict[str, Optional[str]] = {}
 
     @staticmethod
     def _get_default_system_prompt() -> str:
@@ -52,8 +56,10 @@ class MatrixBot:
             "IMPORTANT: Pay close attention to singular vs plural. If the user says 'a flashcard' or 'one flashcard', "
             "create exactly ONE. If they say '3 flashcards', create exactly THREE. Never add extra items. "
             "Use the web_search tool whenever a user asks for time-sensitive, volatile, or unlikely-to-be-memorized information so your answers stay current. "
-            "If the flashcards you create ask for multiple facts at once (e.g., 'What are the colors of the French flag?'), ALWAYS include that number in parentheses after the question (e.g., 'What are the colors of the French flag? (3)') and then give the answer as a numbered list. (e.g., '1. Blue,\n 2. White,\n 3. Red')"
-            "It is very important that the number of expected facts is mentioned in the question to help with later review."
+            "FLASHCARD FORMAT RULE (STRICT): If a flashcard question expects multiple distinct facts/items (more than one), you MUST append the EXACT count in parentheses at the very end of the question, with no extra text. Example: 'What are the colors of the French flag? (3)'. "
+            "Then provide the answer as a numbered list with exactly that many items, one per line, starting at 1. Example: '1. Blue\n2. White\n3. Red'. "
+            "Do NOT include the count for single-fact questions. Do NOT mismatch the count and the number of answer items. If you cannot determine the exact count, ask the user to clarify before creating the flashcard."
+            "Follow these rules strictly to ensure high-quality flashcards and todos."
         )
 
     @staticmethod
@@ -125,6 +131,9 @@ class MatrixBot:
         self.client.add_event_callback(self.on_redaction, RedactionEvent)
         self.client.add_event_callback(self.on_invite, InviteEvent)
         self.client.add_event_callback(self.on_member_event, RoomMemberEvent)
+        
+        # Register sync callback to detect room topic changes
+        self.client.add_response_callback(self.on_sync_response, SyncResponse)
 
         # Login
         if self.config.matrix_access_token:
@@ -151,6 +160,14 @@ class MatrixBot:
         for room_id in self.client.rooms.keys():
             await self._load_room_history(room_id)
             await self._process_pending_messages(room_id)
+            
+            # Ensure room has system prompt in topic
+            await self._ensure_room_prompt(room_id)
+            
+            # Initialize room topic tracking
+            room = self.client.rooms.get(room_id)
+            if room:
+                self.room_topics[room_id] = room.topic
 
         logger.info("History loaded. Starting sync loop...")
         self.is_initial_sync = False
@@ -279,6 +296,51 @@ class MatrixBot:
                 logger.info(f"Left room {room.room_id}")
         except Exception as e:
             logger.error(f"Error checking room members in {room.room_id}: {e}")
+
+    async def on_sync_response(self, response: SyncResponse) -> None:
+        """Handle sync responses to detect room topic changes.
+        
+        This callback is called after each sync and allows us to detect
+        when room topics have changed, ensuring each room maintains its
+        own independent system prompt.
+        """
+        if self.is_initial_sync:
+            return
+        
+        if not self.client:
+            return
+        
+        # Only check rooms that were included in this sync response for efficiency
+        rooms_to_check = set()
+        if hasattr(response, 'rooms'):
+            if hasattr(response.rooms, 'join'):
+                rooms_to_check.update(response.rooms.join.keys())
+            if hasattr(response.rooms, 'invite'):
+                rooms_to_check.update(response.rooms.invite.keys())
+        
+        # Fall back to checking all rooms if we can't determine which were updated
+        if not rooms_to_check:
+            rooms_to_check = set(self.client.rooms.keys())
+        
+        # Check rooms for topic changes
+        for room_id in rooms_to_check:
+            room = self.client.rooms.get(room_id)
+            current_topic = room.topic if room else None
+            previous_topic = self.room_topics.get(room_id)
+            
+            # If topic changed and it's not the first time we're seeing this room
+            if room_id in self.room_topics and current_topic != previous_topic:
+                # Truncate topic for logging (Python 3 string slicing is Unicode-safe)
+                if current_topic:
+                    topic_preview = current_topic[:MAX_TOPIC_LOG_LENGTH]
+                    if len(current_topic) > MAX_TOPIC_LOG_LENGTH:
+                        topic_preview += "..."
+                else:
+                    topic_preview = '(empty)'
+                logger.info(f"Room topic changed in {room_id}: {topic_preview}")
+            
+            # Update our tracking
+            self.room_topics[room_id] = current_topic
 
     async def _mark_as_read(self, room_id: str, event_id: str) -> None:
         """Mark a message as read by setting read markers."""
@@ -616,18 +678,57 @@ class MatrixBot:
             await self._respond_with_llm(room_id, tree, node.event_id, node.timestamp)
 
     async def _ensure_room_prompt(self, room_id: str) -> None:
-        """Set default system prompt in room topic if it's empty."""
+        """Set default system prompt in room topic if it's empty.
+        
+        If the bot lacks permissions to set the topic, it will send a message
+        to the room informing users of the issue.
+        """
         try:
             room = self.client.rooms.get(room_id)
             if room and not room.topic:
-                await self.client.room_put_state(
+                response = await self.client.room_put_state(
                     room_id=room_id,
                     event_type="m.room.topic",
                     content={"topic": self._get_default_system_prompt()},
                 )
-                logger.info(f"Set default system prompt in room topic for {room_id}")
+                
+                # Check if the request was successful by checking for event_id
+                # A successful RoomPutStateResponse will have an event_id attribute
+                # An error response (RoomPutStateError) will not
+                if hasattr(response, 'event_id') and response.event_id:
+                    logger.info(f"Set default system prompt in room topic for {room_id}")
+                else:
+                    logger.warning(f"Failed to set room topic for {room_id}: {response}")
+                    await self._notify_room_topic_permission_error(room_id)
         except Exception as e:
             logger.warning(f"Failed to set room topic: {e}")
+            await self._notify_room_topic_permission_error(room_id)
+    
+    async def _notify_room_topic_permission_error(self, room_id: str) -> None:
+        """Send a message to the room about lacking permission to set topic."""
+        try:
+            message = (
+                "⚠️ I don't have permission to set the room topic/description.\n\n"
+                "The room topic is used as my system prompt. "
+                "Please either:\n"
+                "1. Grant me permission to change the room topic, or\n"
+                "2. Set the room topic manually to customize my behavior for this room.\n\n"
+                "Until then, I'll use my default system prompt."
+            )
+            
+            content = {
+                "msgtype": "m.text",
+                "body": message,
+            }
+            
+            await self.client.room_send(
+                room_id=room_id,
+                message_type="m.room.message",
+                content=content,
+            )
+            logger.info(f"Sent permission error notification to room {room_id}")
+        except Exception as e:
+            logger.error(f"Failed to send notification to room {room_id}: {e}")
 
     async def _build_deck_samples(self, sample_size: int = 10) -> Dict[str, List[Dict[str, str]]]:
         if not self.config.enable_anki:
