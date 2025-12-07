@@ -1283,25 +1283,25 @@ class MatrixBot:
                     
                     # Skip redacted events - check if event has been redacted
                     if hasattr(event, "source"):
-                        source = event.source
-                        if source.get("unsigned", {}).get("redacted_because"):
+                        if event.source.get("unsigned", {}).get("redacted_because"):
                             logger.debug(f"Skipping already redacted event {event.event_id}")
                             continue
                     
-                    # Only process events that have content (text messages, audio, etc.)
-                    if not hasattr(event, "body") and not hasattr(event, "msgtype"):
+                    # Only process events that have content (text messages, audio, files, etc.)
+                    has_content = hasattr(event, "body") or hasattr(event, "msgtype")
+                    if not has_content:
                         continue
                     
                     # Check if this is a root message (no reply_to relation)
                     content = event.source.get("content", {}) if hasattr(event, "source") else {}
                     relates_to = content.get("m.relates_to", {})
                     
-                    # Skip if this is a reply or thread message
-                    if relates_to.get("m.in_reply_to") or relates_to.get("rel_type") == "m.thread":
-                        continue
+                    # Skip if this is a reply, thread message, or edit
+                    is_reply = relates_to.get("m.in_reply_to") is not None
+                    is_thread_msg = relates_to.get("rel_type") == "m.thread"
+                    is_edit = relates_to.get("rel_type") == "m.replace"
                     
-                    # Skip if this is an edit (m.replace)
-                    if relates_to.get("rel_type") == "m.replace":
+                    if is_reply or is_thread_msg or is_edit:
                         continue
                     
                     root_messages_to_delete.append(event.event_id)
