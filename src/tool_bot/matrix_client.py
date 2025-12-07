@@ -52,8 +52,10 @@ class MatrixBot:
             "IMPORTANT: Pay close attention to singular vs plural. If the user says 'a flashcard' or 'one flashcard', "
             "create exactly ONE. If they say '3 flashcards', create exactly THREE. Never add extra items. "
             "Use the web_search tool whenever a user asks for time-sensitive, volatile, or unlikely-to-be-memorized information so your answers stay current. "
-            "If the flashcards you create ask for multiple facts at once (e.g., 'What are the colors of the French flag?'), ALWAYS include that number in parentheses after the question (e.g., 'What are the colors of the French flag? (3)') and then give the answer as a numbered list. (e.g., '1. Blue,\n 2. White,\n 3. Red')"
-            "It is very important that the number of expected facts is mentioned in the question to help with later review."
+            "FLASHCARD FORMAT RULE (STRICT): If a flashcard question expects multiple distinct facts/items (more than one), you MUST append the EXACT count in parentheses at the very end of the question, with no extra text. Example: 'What are the colors of the French flag? (3)'. "
+            "Then provide the answer as a numbered list with exactly that many items, one per line, starting at 1. Example: '1. Blue\n2. White\n3. Red'. "
+            "Do NOT include the count for single-fact questions. Do NOT mismatch the count and the number of answer items. If you cannot determine the exact count, ask the user to clarify before creating the flashcard."
+            "Follow these rules strictly to ensure high-quality flashcards and todos."
         )
 
     @staticmethod
