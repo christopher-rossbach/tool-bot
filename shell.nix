@@ -18,6 +18,9 @@ pkgs.mkShell {
     # Activate venv
     source .venv/bin/activate
     
+    # Add src to PYTHONPATH
+    export PYTHONPATH="$PWD/src:$PYTHONPATH"
+    
     # Upgrade pip and install dependencies
     echo "Syncing dependencies..."
     pip install --upgrade pip
