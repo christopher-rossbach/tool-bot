@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import re
 import time
-from typing import Dict, Optional
+from typing import Dict, List, Optional, Tuple
 
 from nio import (
     AsyncClient,
@@ -48,7 +50,10 @@ class MatrixBot:
             "You are a helpful and friendly assistant. Feel free to have normal conversations. "
             "You can also create Anki flashcards and Todoist todos when the user asks for them. "
             "IMPORTANT: Pay close attention to singular vs plural. If the user says 'a flashcard' or 'one flashcard', "
-            "create exactly ONE. If they say '3 flashcards', create exactly THREE. Never add extra items."
+            "create exactly ONE. If they say '3 flashcards', create exactly THREE. Never add extra items. "
+            "Use the web_search tool whenever a user asks for time-sensitive, volatile, or unlikely-to-be-memorized information so your answers stay current. "
+            "If the flashcards you create ask for multiple facts at once (e.g., 'What are the colors of the French flag?'), ALWAYS include that number in parentheses after the question (e.g., 'What are the colors of the French flag? (3)') and then give the answer as a numbered list. (e.g., '1. Blue,\n 2. White,\n 3. Red')"
+            "It is very important that the number of expected facts is mentioned in the question to help with later review."
         )
 
     @staticmethod
@@ -624,6 +629,99 @@ class MatrixBot:
         except Exception as e:
             logger.warning(f"Failed to set room topic: {e}")
 
+    async def _build_deck_samples(self, sample_size: int = 10) -> Dict[str, List[Dict[str, str]]]:
+        if not self.config.enable_anki:
+            return {}
+
+        try:
+            from tool_bot.anki_client import AnkiConnectClient
+
+            anki = AnkiConnectClient(url=self.config.anki_connect_url)
+            deck_names = await anki.get_deck_names()
+            active_decks = [d for d in deck_names if d.startswith("Active::Bot")]
+
+            samples: Dict[str, List[Dict[str, str]]] = {}
+            for deck in active_decks:
+                samples[deck] = await anki.get_sample_cards(deck, sample_size=sample_size)
+
+            return samples
+        except Exception as e:
+            logger.warning(f"Failed to fetch deck samples: {e}")
+            return {}
+
+    @staticmethod
+    def _ensure_active_bot_deck(deck: str) -> str:
+        if not deck:
+            return "Active::Bot"
+        return deck if deck.startswith("Active::Bot") else f"Active::Bot::{deck}"
+
+    async def _choose_deck_with_llm(
+        self,
+        flashcard: Dict,
+        deck_samples: Dict[str, List[Dict[str, str]]],
+    ) -> Tuple[str, str, List[str]]:
+        """Ask the LLM to select a deck or propose a new subdeck. Fails if the LLM cannot decide."""
+        requested = flashcard.get("deck") or "Default"
+
+        deck_payload = []
+        for deck, samples in deck_samples.items():
+            deck_payload.append({
+                "deck": deck,
+                "samples": samples[:10],
+            })
+
+        system_prompt = (
+            "You are an Anki deck routing helper."
+            " Choose the best existing Active::Bot subdeck for the proposed flashcard,"
+            " or propose a concise new subdeck under Active::Bot if none fit."
+            " Return JSON only."
+        )
+
+        user_prompt = (
+            "Flashcard to file:\n"
+            f"Front: {flashcard.get('front','')}\n"
+            f"Back: {flashcard.get('back','')}\n"
+            f"Requested deck: {requested}\n"
+            "Candidate decks with samples (up to 10 per deck):\n"
+            f"{json.dumps(deck_payload, ensure_ascii=True)}\n"
+            "Respond with a JSON object: {\"deck\": string, \"reason\": string, \"preview\": [strings]}"
+        )
+
+        response_text, _ = await self.llm.process_message(
+            system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+            enable_tools=False,
+        )
+
+        if not response_text:
+            raise RuntimeError("LLM did not return a deck selection")
+
+        try:
+            parsed = json.loads(response_text)
+        except Exception:
+            match = re.search(r"\{.*\}", response_text, flags=re.DOTALL)
+            if not match:
+                raise RuntimeError("LLM response was not valid JSON")
+            parsed = json.loads(match.group(0))
+
+        deck = self._ensure_active_bot_deck(parsed.get("deck") or requested)
+        reason = parsed.get("reason") or "LLM chose this deck."
+        preview_raw = parsed.get("preview") or []
+        preview = []
+        if isinstance(preview_raw, list):
+            for item in preview_raw[:10]:
+                if isinstance(item, str):
+                    preview.append(item.strip())
+
+        return deck, reason, preview
+
+    async def _select_deck_for_flashcard(
+        self,
+        flashcard: Dict,
+        deck_samples: Dict[str, List[Dict[str, str]]],
+    ) -> Tuple[str, str, List[str]]:
+        return await self._choose_deck_with_llm(flashcard, deck_samples)
+
     async def _send_tool_proposals(
         self, room_id: str, trigger_event_id: str, tool_calls, tree, timestamp: int
     ):
@@ -641,15 +739,41 @@ class MatrixBot:
         # Process non-web-search tools individually (flashcards, todos, etc.)
         for tool_call in other_tool_calls:
             if tool_call.tool_name == "create_flashcards":
+                deck_samples = await self._build_deck_samples()
                 for fc in tool_call.arguments.get("flashcards", []):
+                    try:
+                        selected_deck, deck_reason, deck_preview = await self._select_deck_for_flashcard(
+                            fc, deck_samples
+                        )
+                    except Exception as e:
+                        error_body = (
+                            "❌ Failed to choose deck for flashcard via LLM.\n"
+                            f"Front: {fc.get('front','')}\n"
+                            f"Back: {fc.get('back','')}\n"
+                            f"Error: {e}"
+                        )
+                        await self._send_text_reply(
+                            room_id,
+                            trigger_event_id,
+                            error_body,
+                            tree=tree,
+                            timestamp=timestamp,
+                        )
+                        continue
+
+                    fc["deck"] = selected_deck
+                    fc["deck_reason"] = deck_reason
+
                     body = (
                         f"**Flashcard Proposal**\n"
                         f"Type: {fc.get('card_type','basic')}\n"
                         f"Front: {fc.get('front','')}\n"
                         f"Back: {fc.get('back','')}\n"
                         f"Deck: {fc.get('deck','Default')}\n"
-                        f"\nReact with 👍 to create."
                     )
+
+                    body += "\nReact with 👍 to create."
+
                     content = {
                         "msgtype": "m.text",
                         "body": body,

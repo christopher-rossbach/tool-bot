@@ -20,7 +20,7 @@ class FlashcardCreate(BaseModel):
     card_type: Literal["basic", "cloze", "basic-reversed"] = Field(
         description="Type of flashcard"
     )
-    front: str = Field(description="Front of the card (question)")
+    front: str = Field(description="Front of the card (formulated as question that does not reveal the answer).")
     back: str = Field(description="Back of the card (answer)")
     deck: str = Field(description="Name of the Anki deck", default="Default")
     tags: List[str] = Field(description="Tags for the card", default_factory=list)
@@ -231,7 +231,7 @@ class LLMEngine:
         full_messages = [{"role": "system", "content": system_prompt}] + messages
 
         kwargs = {
-            "model": "gpt-4o-mini",  # or gpt-4o for more capable model
+            "model": self.config.openai_model,
             "messages": full_messages,
         }
 
@@ -266,7 +266,7 @@ class LLMEngine:
     ) -> tuple[Optional[str], List[ToolCall]]:
         """Process with Anthropic."""
         kwargs = {
-            "model": "claude-3-5-sonnet-20241022",
+            "model": self.config.anthropic_model,
             "max_tokens": 4096,
             "system": system_prompt,
             "messages": messages,

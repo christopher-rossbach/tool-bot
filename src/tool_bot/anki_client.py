@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import random
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -46,6 +47,10 @@ class AnkiConnectClient:
             logger.info(f"Ensured deck exists: {deck_name}")
         except Exception as e:
             logger.warning(f"Failed to create deck {deck_name}: {e}")
+
+    async def get_deck_names(self) -> List[str]:
+        """Return all deck names."""
+        return await self._invoke("deckNames")
     
     async def add_note(
         self,
@@ -132,6 +137,51 @@ class AnkiConnectClient:
             fields={"Text": text, "Back Extra": "", "Source": "tool-bot"},
             tags=tags or [],
         )
+
+    async def get_note_infos(self, note_ids: List[int]) -> List[Dict[str, Any]]:
+        """Return note info for the given note IDs."""
+        if not note_ids:
+            return []
+        return await self._invoke("notesInfo", {"notes": note_ids})
+
+    async def get_sample_cards(
+        self,
+        deck_name: str,
+        sample_size: int = 10,
+    ) -> List[Dict[str, str]]:
+        """Fetch up to sample_size random cards from a deck (empty deck returns [])."""
+        if sample_size <= 0:
+            return []
+
+        note_ids = await self.find_notes(f'deck:"{deck_name}"')
+        if not note_ids:
+            return []
+
+        if len(note_ids) > sample_size:
+            sample_ids = random.sample(note_ids, k=sample_size)
+        else:
+            sample_ids = note_ids
+
+        notes = await self.get_note_infos(sample_ids)
+        samples: List[Dict[str, str]] = []
+        for note in notes:
+            fields = note.get("fields", {}) if isinstance(note, dict) else {}
+            front = (
+                fields.get("Front", {}).get("value")
+                or fields.get("Text", {}).get("value")
+                or ""
+            )
+            back = (
+                fields.get("Back", {}).get("value")
+                or fields.get("Back Extra", {}).get("value")
+                or ""
+            )
+            samples.append({
+                "front": front.strip(),
+                "back": back.strip(),
+            })
+
+        return samples
     
     async def find_notes(self, query: str) -> List[int]:
         """Find notes matching a query."""

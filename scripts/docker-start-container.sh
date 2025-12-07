@@ -1,3 +1,5 @@
+docker stop tool-bot || true
+docker rm tool-bot || true
 docker run -d \
   --name tool-bot \
   -v "./config/config.json:/app/config/config.json:ro" \

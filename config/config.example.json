@@ -8,6 +8,8 @@
     "@user2:example.org"
   ],
   "llm_provider": "openai",
+  "openai_model": "gpt-4o-mini",
+  "anthropic_model": "claude-3-5-sonnet-20241022",
   "openai_api_key": "sk-...",
   "anthropic_api_key": null,
   "todoist_token": "your_todoist_token_here",
