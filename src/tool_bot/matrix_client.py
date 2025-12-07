@@ -21,7 +21,6 @@ from nio import (
     RoomMessagesResponse,
     RoomMemberEvent,
     SyncResponse,
-    Event,
 )
 
 from tool_bot.config import Config
@@ -43,6 +42,7 @@ class MatrixBot:
         self.web_search = WebSearchClient()
         self.is_initial_sync = True
         self.whisper_model = None
+        self.room_topics: Dict[str, Optional[str]] = {}
 
     @staticmethod
     def _get_default_system_prompt() -> str:
@@ -126,7 +126,9 @@ class MatrixBot:
         self.client.add_event_callback(self.on_redaction, RedactionEvent)
         self.client.add_event_callback(self.on_invite, InviteEvent)
         self.client.add_event_callback(self.on_member_event, RoomMemberEvent)
-        self.client.add_event_callback(self.on_room_topic_event, Event)
+        
+        # Register sync callback to detect room topic changes
+        self.client.add_response_callback(self.on_sync_response, SyncResponse)
 
         # Login
         if self.config.matrix_access_token:
@@ -153,6 +155,11 @@ class MatrixBot:
         for room_id in self.client.rooms.keys():
             await self._load_room_history(room_id)
             await self._process_pending_messages(room_id)
+            
+            # Initialize room topic tracking
+            room = self.client.rooms.get(room_id)
+            if room:
+                self.room_topics[room_id] = room.topic
 
         logger.info("History loaded. Starting sync loop...")
         self.is_initial_sync = False
@@ -282,36 +289,30 @@ class MatrixBot:
         except Exception as e:
             logger.error(f"Error checking room members in {room.room_id}: {e}")
 
-    async def on_room_topic_event(self, room, event: Event) -> None:
-        """Handle room topic/state events.
+    async def on_sync_response(self, response: SyncResponse) -> None:
+        """Handle sync responses to detect room topic changes.
         
-        Detects when the room topic (description) changes and logs it.
-        Each room's system prompt is derived from its topic, so this allows
-        per-room independent system prompts.
+        This callback is called after each sync and allows us to detect
+        when room topics have changed, ensuring each room maintains its
+        own independent system prompt.
         """
-        if not self.client:
-            return
-        
-        # Skip during initial sync
         if self.is_initial_sync:
             return
         
-        # Check if this is a room topic event by examining the event source
-        try:
-            event_type = event.source.get('type') if hasattr(event, 'source') else None
-            if event_type != 'm.room.topic':
-                return
+        if not self.client:
+            return
+        
+        # Check all rooms for topic changes
+        for room_id, room in self.client.rooms.items():
+            current_topic = room.topic if room else None
+            previous_topic = self.room_topics.get(room_id)
             
-            # Get the new topic
-            content = event.source.get('content', {})
-            new_topic = content.get('topic', '')
+            # If topic changed and it's not the first time we're seeing this room
+            if room_id in self.room_topics and current_topic != previous_topic:
+                logger.info(f"Room topic changed in {room_id}: {current_topic[:100] if current_topic else '(empty)'}...")
             
-            logger.info(f"Room topic changed in {room.room_id}: {new_topic[:100]}...")
-            
-            # The system prompt will automatically update on the next message
-            # since _get_room_prompt reads from room.topic
-        except Exception as e:
-            logger.debug(f"Error processing room event in {room.room_id}: {e}")
+            # Update our tracking
+            self.room_topics[room_id] = current_topic
 
     async def _mark_as_read(self, room_id: str, event_id: str) -> None:
         """Mark a message as read by setting read markers."""
