@@ -325,7 +325,7 @@ class MatrixBot:
             
             # If topic changed and it's not the first time we're seeing this room
             if room_id in self.room_topics and current_topic != previous_topic:
-                # Safely truncate topic for logging, respecting Unicode boundaries
+                # Truncate topic for logging (Python 3 string slicing is Unicode-safe)
                 if current_topic:
                     topic_preview = current_topic[:MAX_TOPIC_LOG_LENGTH]
                     if len(current_topic) > MAX_TOPIC_LOG_LENGTH:
