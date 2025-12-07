@@ -1244,7 +1244,12 @@ class MatrixBot:
         logger.info(f"Sent placeholder reply to {event_id}")
 
     async def _handle_clear_command(self, room_id: str, command_event_id: str) -> None:
-        """Handle the !clear command to delete all messages in the room."""
+        """Handle the !clear command to delete all messages in the room.
+        
+        Only deletes root messages (messages with no reply_to parent) and relies on
+        the cascade deletion mechanism in on_redaction to clean up descendants.
+        Skips already-redacted messages.
+        """
         if not self.client:
             return
 
@@ -1255,11 +1260,11 @@ class MatrixBot:
                 "🗑️ Clearing all messages in this room...",
             )
 
-            messages_to_delete = []
+            root_messages_to_delete = []
             next_token = None
             max_iterations = 1000
 
-            logger.info(f"Fetching all messages in room {room_id} for deletion...")
+            logger.info(f"Fetching root messages in room {room_id} for deletion...")
 
             for iteration in range(max_iterations):
                 response = await self.client.room_messages(
@@ -1273,23 +1278,47 @@ class MatrixBot:
                     break
 
                 for event in response.chunk:
-                    if hasattr(event, "event_id"):
-                        messages_to_delete.append(event.event_id)
+                    if not hasattr(event, "event_id"):
+                        continue
+                    
+                    # Skip redacted events - check if event has been redacted
+                    if hasattr(event, "source"):
+                        source = event.source
+                        if source.get("unsigned", {}).get("redacted_because"):
+                            logger.debug(f"Skipping already redacted event {event.event_id}")
+                            continue
+                    
+                    # Only process events that have content (text messages, audio, etc.)
+                    if not hasattr(event, "body") and not hasattr(event, "msgtype"):
+                        continue
+                    
+                    # Check if this is a root message (no reply_to relation)
+                    content = event.source.get("content", {}) if hasattr(event, "source") else {}
+                    relates_to = content.get("m.relates_to", {})
+                    
+                    # Skip if this is a reply or thread message
+                    if relates_to.get("m.in_reply_to") or relates_to.get("rel_type") == "m.thread":
+                        continue
+                    
+                    # Skip if this is an edit (m.replace)
+                    if relates_to.get("rel_type") == "m.replace":
+                        continue
+                    
+                    root_messages_to_delete.append(event.event_id)
 
                 if not response.end:
                     break
 
                 next_token = response.end
 
-            logger.info(f"Found {len(messages_to_delete)} messages to delete")
+            logger.info(f"Found {len(root_messages_to_delete)} root messages to delete (cascade will handle descendants)")
 
             deleted_count = 0
             failed_count = 0
-            successfully_deleted = []
 
             batch_size = 10
-            for i in range(0, len(messages_to_delete), batch_size):
-                batch = messages_to_delete[i:i + batch_size]
+            for i in range(0, len(root_messages_to_delete), batch_size):
+                batch = root_messages_to_delete[i:i + batch_size]
                 tasks = []
                 for event_id in batch:
                     tasks.append(self._redact_message(room_id, event_id))
@@ -1302,17 +1331,12 @@ class MatrixBot:
                         failed_count += 1
                     else:
                         deleted_count += 1
-                        successfully_deleted.append(event_id)
-
-            tree = self.conversation_mgr.get_tree(room_id)
-            for event_id in successfully_deleted:
-                if event_id in tree.nodes:
-                    tree.remove_message(event_id)
 
             result_message = (
                 f"✅ Room cleared!\n"
-                f"Deleted: {deleted_count} messages\n"
-                f"Failed: {failed_count} messages"
+                f"Deleted: {deleted_count} root messages\n"
+                f"Failed: {failed_count} messages\n"
+                f"(Descendants cascaded automatically)"
             )
 
             await self._send_text_reply(

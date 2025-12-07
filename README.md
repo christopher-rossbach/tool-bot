@@ -125,8 +125,9 @@ Bot: [deletes old proposals, sends 3 new ones with updated info]
 You: !clear
 Bot: 🗑️ Clearing all messages in this room...
 Bot: ✅ Room cleared!
-     Deleted: 42 messages
+     Deleted: 42 root messages
      Failed: 0 messages
+     (Descendants cascaded automatically)
 ```
 
 
