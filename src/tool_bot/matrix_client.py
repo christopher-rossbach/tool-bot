@@ -1249,7 +1249,7 @@ class MatrixBot:
             return
 
         try:
-            await self._send_text_reply(
+            status_resp = await self._send_text_reply(
                 room_id,
                 command_event_id,
                 "🗑️ Clearing all messages in this room...",
@@ -1284,21 +1284,29 @@ class MatrixBot:
 
             deleted_count = 0
             failed_count = 0
+            successfully_deleted = []
 
-            for event_id in messages_to_delete:
-                try:
-                    await self.client.room_redact(
-                        room_id=room_id,
-                        event_id=event_id,
-                        reason="Room cleared by !clear command",
-                    )
-                    deleted_count += 1
-                except Exception as e:
-                    logger.warning(f"Failed to delete message {event_id}: {e}")
-                    failed_count += 1
+            batch_size = 10
+            for i in range(0, len(messages_to_delete), batch_size):
+                batch = messages_to_delete[i:i + batch_size]
+                tasks = []
+                for event_id in batch:
+                    tasks.append(self._redact_message(room_id, event_id))
+
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                for event_id, result in zip(batch, results):
+                    if isinstance(result, Exception):
+                        logger.warning(f"Failed to delete message {event_id}: {result}")
+                        failed_count += 1
+                    else:
+                        deleted_count += 1
+                        successfully_deleted.append(event_id)
 
             tree = self.conversation_mgr.get_tree(room_id)
-            tree.nodes.clear()
+            for event_id in successfully_deleted:
+                if event_id in tree.nodes:
+                    tree.remove_message(event_id)
 
             result_message = (
                 f"✅ Room cleared!\n"
@@ -1319,6 +1327,14 @@ class MatrixBot:
                 command_event_id,
                 f"Failed to clear room: {e}",
             )
+
+    async def _redact_message(self, room_id: str, event_id: str) -> None:
+        """Redact a single message."""
+        await self.client.room_redact(
+            room_id=room_id,
+            event_id=event_id,
+            reason="Room cleared by !clear command",
+        )
 
     async def stop(self) -> None:
         """Stop the client and cleanup."""
