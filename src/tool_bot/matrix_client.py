@@ -483,6 +483,12 @@ class MatrixBot:
         
         asyncio.create_task(self._mark_as_read(room.room_id, event.event_id))
 
+        # Check for commands
+        if event.body.strip().startswith("!clear"):
+            logger.info(f"Detected !clear command from {event.sender}")
+            await self._handle_clear_command(room.room_id, event.event_id)
+            return
+
         # Extract relations
         content = event.source.get("content", {})
         relates_to = content.get("m.relates_to", {})
@@ -1236,6 +1242,83 @@ class MatrixBot:
             content=content,
         )
         logger.info(f"Sent placeholder reply to {event_id}")
+
+    async def _handle_clear_command(self, room_id: str, command_event_id: str) -> None:
+        """Handle the !clear command to delete all messages in the room."""
+        if not self.client:
+            return
+
+        try:
+            await self._send_text_reply(
+                room_id,
+                command_event_id,
+                "🗑️ Clearing all messages in this room...",
+            )
+
+            messages_to_delete = []
+            next_token = None
+
+            logger.info(f"Fetching all messages in room {room_id} for deletion...")
+
+            while True:
+                response = await self.client.room_messages(
+                    room_id=room_id,
+                    start=next_token or "",
+                    limit=100,
+                )
+
+                if not isinstance(response, RoomMessagesResponse):
+                    logger.warning(f"Failed to fetch messages: {response}")
+                    break
+
+                for event in response.chunk:
+                    if hasattr(event, "event_id"):
+                        messages_to_delete.append(event.event_id)
+
+                if not response.end:
+                    break
+
+                next_token = response.end
+
+            logger.info(f"Found {len(messages_to_delete)} messages to delete")
+
+            deleted_count = 0
+            failed_count = 0
+
+            for event_id in messages_to_delete:
+                try:
+                    await self.client.room_redact(
+                        room_id=room_id,
+                        event_id=event_id,
+                        reason="Room cleared by !clear command",
+                    )
+                    deleted_count += 1
+                except Exception as e:
+                    logger.warning(f"Failed to delete message {event_id}: {e}")
+                    failed_count += 1
+
+            tree = self.conversation_mgr.get_tree(room_id)
+            tree.nodes.clear()
+
+            result_message = (
+                f"✅ Room cleared!\n"
+                f"Deleted: {deleted_count} messages\n"
+                f"Failed: {failed_count} messages"
+            )
+
+            await self._send_text_reply(
+                room_id,
+                command_event_id,
+                result_message,
+            )
+
+        except Exception as e:
+            logger.error(f"Error handling !clear command: {e}")
+            await self._send_error_reply(
+                room_id,
+                command_event_id,
+                f"Failed to clear room: {e}",
+            )
 
     async def stop(self) -> None:
         """Stop the client and cleanup."""
