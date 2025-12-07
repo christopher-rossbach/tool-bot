@@ -545,6 +545,12 @@ class MatrixBot:
         
         asyncio.create_task(self._mark_as_read(room.room_id, event.event_id))
 
+        # Check for commands
+        if event.body.strip().startswith("!clear"):
+            logger.info(f"Detected !clear command from {event.sender}")
+            await self._handle_clear_command(room.room_id, event.event_id)
+            return
+
         # Extract relations
         content = event.source.get("content", {})
         relates_to = content.get("m.relates_to", {})
@@ -1337,6 +1343,153 @@ class MatrixBot:
             content=content,
         )
         logger.info(f"Sent placeholder reply to {event_id}")
+
+    async def _handle_clear_command(self, room_id: str, command_event_id: str) -> None:
+        """Handle the !clear command to delete all messages in the room.
+        
+        Only deletes root messages (messages with no reply_to parent) and relies on
+        the cascade deletion mechanism in on_redaction to clean up descendants.
+        Skips already-redacted messages.
+        """
+        if not self.client:
+            return
+
+        try:
+            status_resp = await self._send_text_reply(
+                room_id,
+                command_event_id,
+                "🗑️ Clearing all messages in this room...",
+            )
+
+            root_messages_to_delete = []
+            next_token = None
+            max_iterations = 1000
+
+            logger.info(f"Fetching root messages in room {room_id} for deletion...")
+
+            for iteration in range(max_iterations):
+                response = await self.client.room_messages(
+                    room_id=room_id,
+                    start=next_token or "",
+                    limit=100,
+                )
+
+                if not isinstance(response, RoomMessagesResponse):
+                    logger.warning(f"Failed to fetch messages: {response}")
+                    break
+
+                for event in response.chunk:
+                    if not hasattr(event, "event_id"):
+                        continue
+                    
+                    # Skip redacted events - check if event has been redacted
+                    if hasattr(event, "source"):
+                        if event.source.get("unsigned", {}).get("redacted_because"):
+                            logger.debug(f"Skipping already redacted event {event.event_id}")
+                            continue
+                    
+                    # Only process events that have content (text messages, audio, files, etc.)
+                    has_content = hasattr(event, "body") or hasattr(event, "msgtype")
+                    if not has_content:
+                        continue
+                    
+                    # Check if this is a root message (no reply_to relation)
+                    content = event.source.get("content", {}) if hasattr(event, "source") else {}
+                    relates_to = content.get("m.relates_to", {})
+                    
+                    # Skip if this is a thread message or edit
+                    is_thread_msg = relates_to.get("rel_type") == "m.thread"
+                    is_edit = relates_to.get("rel_type") == "m.replace"
+                    
+                    if is_thread_msg or is_edit:
+                        continue
+                    
+                    # Check if this is a reply
+                    is_reply = relates_to.get("m.in_reply_to") is not None
+                    
+                    # Include root messages, plus bot's status messages from previous !clear commands
+                    if is_reply:
+                        # Check if this is a bot message that's a status message from a previous !clear
+                        is_bot_msg = (
+                            self.bot_user_id and 
+                            hasattr(event, "sender") and 
+                            event.sender == self.bot_user_id
+                        )
+                        if is_bot_msg and hasattr(event, "body"):
+                            # Check if it's a clear status message (use the same strings as sent)
+                            is_clear_status = (
+                                "🗑️ Clearing all messages in this room..." in event.body or
+                                "✅ Room cleared!" in event.body
+                            )
+                            if is_clear_status:
+                                # Include this bot status message for deletion
+                                root_messages_to_delete.append(event.event_id)
+                        continue
+                    
+                    # This is a root message, add it
+                    root_messages_to_delete.append(event.event_id)
+
+                if not response.end:
+                    break
+
+                next_token = response.end
+
+            logger.info(f"Found {len(root_messages_to_delete)} messages to delete (root messages + bot status messages; cascade will handle descendants)")
+
+            deleted_count = 0
+            failed_count = 0
+
+            batch_size = 10
+            for i in range(0, len(root_messages_to_delete), batch_size):
+                batch = root_messages_to_delete[i:i + batch_size]
+                tasks = []
+                for event_id in batch:
+                    tasks.append(self._redact_message(room_id, event_id))
+
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+
+                for event_id, result in zip(batch, results):
+                    if isinstance(result, Exception):
+                        logger.warning(f"Failed to delete message {event_id}: {result}")
+                        failed_count += 1
+                    else:
+                        deleted_count += 1
+
+            result_message = (
+                f"✅ Room cleared!\n"
+                f"Deleted: {deleted_count} root messages\n"
+                f"Failed: {failed_count} messages\n"
+                f"(Descendants cascaded automatically)"
+            )
+
+            await self._send_text_reply(
+                room_id,
+                command_event_id,
+                result_message,
+            )
+
+        except Exception as e:
+            logger.error(f"Error handling !clear command: {e}")
+            await self._send_error_reply(
+                room_id,
+                command_event_id,
+                f"Failed to clear room: {e}",
+            )
+
+    async def _redact_message(self, room_id: str, event_id: str) -> None:
+        """Redact a single message.
+        
+        Raises exception if redaction fails, allowing caller to handle errors.
+        """
+        try:
+            await self.client.room_redact(
+                room_id=room_id,
+                event_id=event_id,
+                reason="Room cleared by !clear command",
+            )
+        except Exception as e:
+            logger.debug(f"Failed to redact message {event_id}: {e}")
+            raise
 
     async def stop(self) -> None:
         """Stop the client and cleanup."""

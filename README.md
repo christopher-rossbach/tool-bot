@@ -14,6 +14,7 @@ Features include web search capabilities, threaded conversations, message edits 
 - **Reaction Approvals**: React with any thumbs-up variant (👍 👍🏻 👍🏼 👍🏽 👍🏾 👍🏿) to execute
 - **Voice Transcription**: Transcribes voice messages in German, Spanish, and English via OpenAI Whisper API
 - **Cascade Deletions**: Deleting a message removes all bot replies in that thread
+- **Clear Command**: Use `!clear` to delete all messages in the current room
 - **Restart Safe**: Loads room history on startup; won't re-process old messages
 - **Room Prompts**: System prompt from room topic; sets sensible default on join
 - **Graceful Fallbacks**: Helpful error messages when Anki-Connect is unavailable
@@ -118,6 +119,17 @@ Bot: [3 proposals]
 You: [edits message] Create flashcards for NYC (8.3M), LA (4M), Chicago (2.7M)
 Bot: [deletes old proposals, sends 3 new ones with updated info]
 \`\`\`
+
+**Clear room:**
+```
+You: !clear
+Bot: 🗑️ Clearing all messages in this room...
+Bot: ✅ Room cleared!
+     Deleted: 42 root messages
+     Failed: 0 messages
+     (Descendants cascaded automatically)
+```
+
 
 ## ⚙️ Configuration
 
