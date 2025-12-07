@@ -1311,12 +1311,16 @@ class MatrixBot:
                     # Include root messages, plus bot's status messages from previous !clear commands
                     if is_reply:
                         # Check if this is a bot message that's a status message from a previous !clear
-                        is_bot_msg = hasattr(event, "sender") and event.sender == self.bot_user_id
+                        is_bot_msg = (
+                            self.bot_user_id and 
+                            hasattr(event, "sender") and 
+                            event.sender == self.bot_user_id
+                        )
                         if is_bot_msg and hasattr(event, "body"):
-                            # Check if it's a clear status message
+                            # Check if it's a clear status message (use the same strings as sent)
                             is_clear_status = (
-                                "Clearing all messages in this room" in event.body or
-                                "Room cleared!" in event.body
+                                "🗑️ Clearing all messages in this room..." in event.body or
+                                "✅ Room cleared!" in event.body
                             )
                             if is_clear_status:
                                 # Include this bot status message for deletion
