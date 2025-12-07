@@ -296,22 +296,22 @@ class MatrixBot:
         if self.is_initial_sync:
             return
         
-        # Check if this is a room topic event
-        if not hasattr(event, 'source'):
-            return
+        # Check if this is a room topic event by examining the event source
+        try:
+            event_type = event.source.get('type') if hasattr(event, 'source') else None
+            if event_type != 'm.room.topic':
+                return
             
-        event_type = event.source.get('type')
-        if event_type != 'm.room.topic':
-            return
-        
-        # Get the new topic
-        content = event.source.get('content', {})
-        new_topic = content.get('topic', '')
-        
-        logger.info(f"Room topic changed in {room.room_id}: {new_topic[:100]}...")
-        
-        # The system prompt will automatically update on the next message
-        # since _get_room_prompt reads from room.topic
+            # Get the new topic
+            content = event.source.get('content', {})
+            new_topic = content.get('topic', '')
+            
+            logger.info(f"Room topic changed in {room.room_id}: {new_topic[:100]}...")
+            
+            # The system prompt will automatically update on the next message
+            # since _get_room_prompt reads from room.topic
+        except Exception as e:
+            logger.debug(f"Error processing room event in {room.room_id}: {e}")
 
     async def _mark_as_read(self, room_id: str, event_id: str) -> None:
         """Mark a message as read by setting read markers."""
@@ -663,8 +663,10 @@ class MatrixBot:
                     content={"topic": self._get_default_system_prompt()},
                 )
                 
-                # Check if the request was successful
-                if hasattr(response, 'event_id'):
+                # Check if the request was successful by checking for event_id
+                # A successful RoomPutStateResponse will have an event_id attribute
+                # An error response (RoomPutStateError) will not
+                if hasattr(response, 'event_id') and response.event_id:
                     logger.info(f"Set default system prompt in room topic for {room_id}")
                 else:
                     logger.warning(f"Failed to set room topic for {room_id}: {response}")
