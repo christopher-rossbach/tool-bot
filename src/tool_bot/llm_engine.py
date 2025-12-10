@@ -43,6 +43,14 @@ class TodoCreate(BaseModel):
     )
 
 
+class WebSearchQuery(BaseModel):
+    """Schema for performing a web search."""
+
+    query: str = Field(
+        description="The search query or question to search the web for. Should be a clear, specific question that can be answered by web search."
+    )
+
+
 
 
 
@@ -68,7 +76,6 @@ class LLMEngine:
         Get tool definitions for the LLM.
         
         Currently supports: create_flashcards, create_todos, web_search
-        Note: web_search requires using a search-enabled model like gpt-4o-mini-search-preview
         """
         tools = [
             {
@@ -107,12 +114,24 @@ class LLMEngine:
                     },
                 },
             },
+            {
+                "type": "function",
+                "function": {
+                    "name": "web_search",
+                    "description": "Search the web for current information. Use this when you need up-to-date information, facts about recent events, or information you don't have in your training data. Formulate a clear, specific search query or question.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "The search query or question to search the web for. Should be clear and specific.",
+                            }
+                        },
+                        "required": ["query"],
+                    },
+                },
+            },
         ]
-        
-        # Add web_search tool if using a search-enabled model
-        # Web search works with: gpt-5-search-api, gpt-4o-search-preview, gpt-4o-mini-search-preview
-        if "search" in self.config.openai_model.lower():
-            tools.append({"type": "web_search"})
         
         return tools
 
@@ -171,5 +190,45 @@ class LLMEngine:
                 )
 
         return text, tool_calls
+
+    async def perform_web_search(self, query: str) -> str:
+        """
+        Perform a web search using a search-enabled model.
+        
+        Args:
+            query: The search query or question to search for
+            
+        Returns:
+            The search results as a string
+        """
+        logger.info(f"Performing web search with query: {query}")
+        
+        # Use the web search model with web_search tool enabled
+        kwargs = {
+            "model": self.config.web_search_model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": query
+                }
+            ],
+            "tools": [{"type": "web_search"}],
+        }
+        
+        try:
+            response = await self.client.chat.completions.create(**kwargs)
+            message = response.choices[0].message
+            
+            # The response should contain the search results
+            if message.content:
+                logger.info(f"Web search completed successfully")
+                return message.content
+            else:
+                logger.warning("Web search returned no content")
+                return "No search results found."
+                
+        except Exception as e:
+            logger.error(f"Web search failed: {e}")
+            raise RuntimeError(f"Web search failed: {e}")
 
 

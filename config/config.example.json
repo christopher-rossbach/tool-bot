@@ -27,5 +27,6 @@
   ],
   "enable_e2ee": false,
   "enable_anki": true,
-  "anki_connect_url": "http://anki-connect:8765"
+  "anki_connect_url": "http://anki-connect:8765",
+  "web_search_model": "gpt-4o-mini-search-preview"
 }

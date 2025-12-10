@@ -38,6 +38,7 @@ class Config:
     enable_e2ee: bool
     enable_anki: bool
     anki_connect_url: str
+    web_search_model: str
 
     @staticmethod
     def load() -> "Config":
@@ -71,6 +72,7 @@ class Config:
             enable_e2ee=data.get("enable_e2ee", False),
             enable_anki=data.get("enable_anki", True),
             anki_connect_url=data.get("anki_connect_url", "http://localhost:8765"),
+            web_search_model=data.get("web_search_model", "gpt-4o-mini-search-preview"),
         )
     
     @staticmethod
@@ -91,4 +93,5 @@ class Config:
             enable_e2ee=_get_bool("ENABLE_E2EE", False),
             enable_anki=_get_bool("ENABLE_ANKI", True),
             anki_connect_url=_get("ANKI_CONNECT_URL", "http://localhost:8765"),
+            web_search_model=_get("WEB_SEARCH_MODEL", "gpt-4o-mini-search-preview"),
         )

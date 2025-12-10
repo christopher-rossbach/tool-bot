@@ -832,7 +832,66 @@ class MatrixBot:
         """Send tool proposals as replies to messages."""
         # Process tools individually (flashcards, todos, etc.)
         for tool_call in tool_calls:
-            if tool_call.tool_name == "create_flashcards":
+            if tool_call.tool_name == "web_search":
+                # Web search is executed immediately and results are fed back
+                query = tool_call.arguments.get("query", "")
+                if not query:
+                    logger.warning("Web search called with empty query")
+                    continue
+                
+                try:
+                    # Perform the web search
+                    search_results = await self.llm.perform_web_search(query)
+                    
+                    # Get the current conversation context
+                    context_nodes = tree.get_thread_context(trigger_event_id, max_depth=10)
+                    messages = []
+                    for node in context_nodes:
+                        role = "user" if not node.is_bot_message else "assistant"
+                        messages.append({"role": role, "content": node.content})
+                    
+                    # Add the search results as a system-like message
+                    messages.append({
+                        "role": "user",
+                        "content": f"[Web Search Results for '{query}']\n\n{search_results}"
+                    })
+                    
+                    # Get system prompt and call LLM again with search results
+                    system_prompt = await self._get_room_prompt(room_id)
+                    text, new_tool_calls = await self.llm.process_message(system_prompt, messages)
+                    
+                    # Send the response with search results incorporated
+                    if text:
+                        await self._send_text_reply(
+                            room_id,
+                            trigger_event_id,
+                            text,
+                            tree=tree,
+                            timestamp=timestamp,
+                        )
+                    
+                    # Handle any new tool calls from the LLM after seeing search results
+                    if new_tool_calls:
+                        await self._send_tool_proposals(
+                            room_id,
+                            trigger_event_id,
+                            new_tool_calls,
+                            tree,
+                            timestamp,
+                        )
+                        
+                except Exception as e:
+                    logger.error(f"Web search failed: {e}")
+                    error_msg = f"❌ Web search failed: {e}"
+                    await self._send_text_reply(
+                        room_id,
+                        trigger_event_id,
+                        error_msg,
+                        tree=tree,
+                        timestamp=timestamp,
+                    )
+                    
+            elif tool_call.tool_name == "create_flashcards":
                 deck_samples = await self._build_deck_samples()
                 for fc in tool_call.arguments.get("flashcards", []):
                     try:
