@@ -31,11 +31,8 @@ class Config:
     matrix_password: Optional[str]
     matrix_access_token: Optional[str]
     allowed_users: List[str]
-    llm_provider: str
     openai_model: str
-    anthropic_model: str
     openai_api_key: Optional[str]
-    anthropic_api_key: Optional[str]
     todoist_token: Optional[str]
     whisper_model: str
     enable_e2ee: bool
@@ -67,11 +64,8 @@ class Config:
             matrix_password=data.get("matrix_password"),
             matrix_access_token=data.get("matrix_access_token"),
             allowed_users=data.get("allowed_users", []),
-            llm_provider=data.get("llm_provider", "openai"),
             openai_model=data.get("openai_model", "gpt-4o-mini"),
-            anthropic_model=data.get("anthropic_model", "claude-3-5-sonnet-20241022"),
             openai_api_key=data.get("openai_api_key"),
-            anthropic_api_key=data.get("anthropic_api_key"),
             todoist_token=data.get("todoist_token"),
             whisper_model=data.get("whisper_model", "base"),
             enable_e2ee=data.get("enable_e2ee", False),
@@ -90,11 +84,8 @@ class Config:
             matrix_password=_get("MATRIX_PASSWORD"),
             matrix_access_token=_get("MATRIX_ACCESS_TOKEN"),
             allowed_users=_split("ALLOWED_USERS"),
-            llm_provider=_get("LLM_PROVIDER", "openai"),
             openai_model=_get("OPENAI_MODEL", "gpt-4o-mini"),
-            anthropic_model=_get("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022"),
             openai_api_key=_get("OPENAI_API_KEY"),
-            anthropic_api_key=_get("ANTHROPIC_API_KEY"),
             todoist_token=_get("TODOIST_TOKEN"),
             whisper_model=_get("WHISPER_MODEL", "base"),
             enable_e2ee=_get_bool("ENABLE_E2EE", False),

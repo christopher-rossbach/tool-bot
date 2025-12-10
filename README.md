@@ -1,12 +1,12 @@
 # Matrix Tool Bot
 
-A Python Matrix bot powered by LLM tool-calling (OpenAI/Anthropic) that proposes and executes tasks like creating Anki flashcards and Todoist todos.
-Features include web search capabilities, threaded conversations, message edits with regeneration, reaction-based approvals (all thumbs-up variants), voice message transcription (DE/ES/EN), cascading deletions, and restart-safe state management.
+A Python Matrix bot powered by LLM tool-calling (OpenAI) that proposes and executes tasks like creating Anki flashcards and Todoist todos.
+Features include threaded conversations, message edits with regeneration, reaction-based approvals (all thumbs-up variants), voice message transcription (DE/ES/EN), cascading deletions, and restart-safe state management.
 
 ## ✨ Features
 
-- **LLM Tool Calling**: Uses OpenAI (gpt-4o-mini) or Anthropic (claude-3.5-sonnet) with function/tool calling
-- **Web Search**: Search the web using DuckDuckGo to enrich context with up-to-date information
+- **LLM Tool Calling**: Uses OpenAI (gpt-4o-mini) with function/tool calling
+- **Web Search**: Available when using search-enabled models (e.g., gpt-4o-mini-search-preview)
 - **Anki Integration**: Creates flashcards via Anki-Connect with automatic deck hierarchy (`Active::Bot`)
 - **Todoist Integration**: Creates tasks with natural language due dates and project management
 - **Threaded Context**: First message spawns a thread; maintains conversation context
@@ -25,7 +25,7 @@ Features include web search capabilities, threaded conversations, message edits 
 
 - Python 3.9+ (or use Nix shell)
 - Anki with [Anki-Connect](https://ankiweb.net/shared/info/2055492159) installed (if using flashcards)
-- OpenAI or Anthropic API key
+- OpenAI API key
 - Todoist API token (optional)
 - direnv (optional but recommended)
 
@@ -87,22 +87,6 @@ You: 👍
 Bot: ✅ Todo created in Todoist (task id: 7890123456)
 ```
 
-**Web search:**
-```
-You: What are the latest developments in quantum computing?
-Bot: 🔍 Web Search Results for: latest developments in quantum computing
-
-     1. **Quantum Computing Breakthrough 2024**
-        Scientists achieve new milestone in error correction...
-        https://example.com/quantum-news
-
-     2. **IBM Announces 1000-Qubit Processor**
-        Major advancement in quantum processor technology...
-        https://example.com/ibm-quantum
-     
-     [Additional results...]
-```
-
 **Voice messages:**
 \`\`\`
 You: [sends voice message in German]
@@ -140,14 +124,14 @@ All configuration via environment variables (see \`.envrc.example\`):
 - \`MATRIX_USER\` - Bot's Matrix ID (e.g., \`@bot:example.org\`)
 - \`MATRIX_PASSWORD\` or \`MATRIX_ACCESS_TOKEN\` - Authentication
 - \`ALLOWED_USERS\` - Comma-separated Matrix IDs allowed to use bot
-- \`LLM_PROVIDER\` - \`openai\` or \`anthropic\`
-- \`OPENAI_API_KEY\` or \`ANTHROPIC_API_KEY\` - Depending on provider
+- \`OPENAI_API_KEY\` - OpenAI API key
 
 ### Optional
 - `TODOIST_TOKEN` - Todoist API token for todo creation
 - `ENABLE_ANKI` - Enable/disable Anki integration (default: `true`)
 - `ANKI_CONNECT_URL` - Anki-Connect URL (default: `http://localhost:8765`)
 - `WHISPER_MODEL` - Whisper model size (default: `base`). Options: `tiny`, `tiny.en`, `base`, `base.en`, `small`, `small.en`, `medium`, `medium.en`, `large-v1`, `large-v2`, `large-v3`, `large`
+- `OPENAI_MODEL` - OpenAI model to use (default: `gpt-4o-mini`). Use `gpt-4o-mini-search-preview` or `gpt-4o-search-preview` for web search
 - `ENABLE_E2EE` - Enable E2EE support (default: `false`)
 
 ### System Prompt
@@ -213,7 +197,6 @@ docker run --rm \\
   -e MATRIX_USER="@bot:example.org" \\
   -e MATRIX_PASSWORD="secret" \\
   -e ALLOWED_USERS="@user:example.org" \\
-  -e LLM_PROVIDER="openai" \\
   -e OPENAI_API_KEY="sk-..." \\
   tool-bot:latest
 \`\`\`

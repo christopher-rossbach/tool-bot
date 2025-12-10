@@ -39,10 +39,8 @@ class MatrixBot:
         self.bot_user_id: Optional[str] = None
         self.conversation_mgr = ConversationManager()
         from tool_bot.llm_engine import LLMEngine
-        from tool_bot.web_search_client import WebSearchClient
 
         self.llm = LLMEngine(config)
-        self.web_search = WebSearchClient()
         self.is_initial_sync = True
         self.whisper_model = None
         self.room_topics: Dict[str, Optional[str]] = {}
@@ -55,7 +53,6 @@ class MatrixBot:
             "You can also create Anki flashcards and Todoist todos when the user asks for them. "
             "IMPORTANT: Pay close attention to singular vs plural. If the user says 'a flashcard' or 'one flashcard', "
             "create exactly ONE. If they say '3 flashcards', create exactly THREE. Never add extra items. "
-            "Use the web_search tool whenever a user asks for time-sensitive, volatile, or unlikely-to-be-memorized information so your answers stay current. "
             "FLASHCARD FORMAT RULE (STRICT): If a flashcard question expects multiple distinct facts/items (more than one), you MUST append the EXACT count in parentheses at the very end of the question, with no extra text. Example: 'What are the colors of the French flag? (3)'. "
             "Then provide the answer as a numbered list with exactly that many items, one per line, starting at 1. Example: '1. Blue\n2. White\n3. Red'. "
             "Do NOT include the count for single-fact questions. Do NOT mismatch the count and the number of answer items. If you cannot determine the exact count, ask the user to clarify before creating the flashcard."
@@ -833,18 +830,8 @@ class MatrixBot:
         self, room_id: str, trigger_event_id: str, tool_calls, tree, timestamp: int
     ):
         """Send tool proposals as replies to messages."""
-        # Separate web_search calls from other tool calls
-        web_search_calls = []
-        other_tool_calls = []
-
+        # Process tools individually (flashcards, todos, etc.)
         for tool_call in tool_calls:
-            if tool_call.tool_name == "web_search":
-                web_search_calls.append(tool_call)
-            else:
-                other_tool_calls.append(tool_call)
-
-        # Process non-web-search tools individually (flashcards, todos, etc.)
-        for tool_call in other_tool_calls:
             if tool_call.tool_name == "create_flashcards":
                 deck_samples = await self._build_deck_samples()
                 for fc in tool_call.arguments.get("flashcards", []):
@@ -935,128 +922,6 @@ class MatrixBot:
                             is_bot_message=True,
                         )
                         tree.nodes[resp.event_id].tool_proposal = td
-
-        # Process all web_search calls together in a single response
-        if web_search_calls:
-            await self._handle_web_searches(
-                room_id, trigger_event_id, web_search_calls, tree, timestamp
-            )
-
-    async def _handle_web_searches(
-        self,
-        room_id: str,
-        trigger_event_id: str,
-        web_search_calls,
-        tree,
-        timestamp: int,
-    ):
-        """Handle multiple web search calls in a single consolidated response."""
-        # Step 1: Send initial message indicating all searches
-        queries = [call.arguments.get("query", "") for call in web_search_calls]
-
-        if len(queries) == 1:
-            initial_body = f"🔍 Searching the web for: **{queries[0]}**\n\nFetching and analyzing results..."
-        else:
-            initial_body = f"🔍 Searching the web for {len(queries)} queries:\n"
-            for i, query in enumerate(queries, 1):
-                initial_body += f"  {i}. **{query}**\n"
-            initial_body += "\nFetching and analyzing results..."
-
-        initial_content = {
-            "msgtype": "m.text",
-            "body": initial_body,
-            "m.relates_to": {
-                "m.in_reply_to": {"event_id": trigger_event_id},
-            },
-        }
-        initial_resp = await self.client.room_send(
-            room_id=room_id,
-            message_type="m.room.message",
-            content=initial_content,
-        )
-
-        initial_event_id = None
-        if hasattr(initial_resp, "event_id"):
-            initial_event_id = initial_resp.event_id
-            tree.add_message(
-                event_id=initial_event_id,
-                sender=self.bot_user_id or "",
-                content=initial_body,
-                timestamp=timestamp,
-                reply_to=trigger_event_id,
-                is_bot_message=True,
-            )
-
-        # Step 2: Execute all searches and collect results
-        search_queries = [
-            {
-                "query": call.arguments.get("query", ""),
-                "max_results": call.arguments.get("max_results", 3),
-            }
-            for call in web_search_calls
-        ]
-
-        all_search_results = await self.web_search.execute_searches(search_queries)
-
-        # Step 3: Use LLM to extract and synthesize information
-        try:
-            if not any(r.get("status") == "success" for r in all_search_results):
-                final_body = "❌ All web searches failed or returned no usable results."
-            else:
-                # Build extraction prompt
-                extraction_prompt, source_map = self.web_search.build_extraction_prompt(
-                    all_search_results
-                )
-
-                # Call LLM to extract information
-                system_prompt = (
-                    "You are a helpful assistant that extracts and synthesizes information from web search results. "
-                    "Provide clear, concise answers based on the provided content. "
-                    "Always cite your sources by mentioning the source number."
-                )
-
-                extraction_messages = [{"role": "user", "content": extraction_prompt}]
-
-                extracted_text, _ = await self.llm.process_message(
-                    system_prompt, extraction_messages, enable_tools=False
-                )
-
-                if extracted_text:
-                    final_body = self.web_search.format_search_results(
-                        extracted_text, source_map
-                    )
-                else:
-                    final_body = (
-                        "Could not extract information from the search results."
-                    )
-
-        except Exception as e:
-            logger.error(f"LLM extraction failed: {e}")
-            final_body = f"❌ Failed to process search results: {str(e)}"
-
-        # Step 4: Send final consolidated reply
-        reply_to_id = initial_event_id if initial_event_id else trigger_event_id
-        final_content = {
-            "msgtype": "m.text",
-            "body": final_body,
-            "m.relates_to": {
-                "m.in_reply_to": {"event_id": reply_to_id},
-            },
-        }
-        final_resp = await self.client.room_send(
-            room_id=room_id,
-            message_type="m.room.message",
-            content=final_content,
-        )
-        if hasattr(final_resp, "event_id"):
-            tree.add_message(
-                event_id=final_resp.event_id,
-                sender=self.bot_user_id or "",
-                content=final_body,
-                timestamp=timestamp,
-                reply_to=reply_to_id,
-                is_bot_message=True,
-            )
 
     async def _execute_proposal(
         self,

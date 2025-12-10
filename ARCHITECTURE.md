@@ -1,10 +1,10 @@
 # Matrix Tool Bot - Architecture & Implementation Guide
 
-**Last Updated:** December 2, 2025
+**Last Updated:** December 10, 2025
 
 ## Project Overview
 
-A Python-based Matrix bot that uses LLM tool-calling (OpenAI/Anthropic) to propose and execute tasks like creating Anki flashcards and Todoist todos. Features threaded conversations, per-message edits with regeneration, reaction-based approvals (👍), voice message transcription (German, Spanish, English), and cascading deletions.
+A Python-based Matrix bot that uses LLM tool-calling (OpenAI) to propose and execute tasks like creating Anki flashcards and Todoist todos. Features threaded conversations, per-message edits with regeneration, reaction-based approvals (👍), voice message transcription (German, Spanish, English), and cascading deletions.
 
 ## Core Architecture
 
@@ -17,10 +17,9 @@ src/tool_bot/
 ├── config.py             # Environment variable loader
 ├── matrix_client.py      # Matrix-nio async client wrapper
 ├── conversation.py       # In-memory conversation tree/DAG
-├── llm_engine.py         # LLM tool-calling (OpenAI/Anthropic)
+├── llm_engine.py         # LLM tool-calling (OpenAI)
 ├── anki_client.py        # Anki-Connect JSON-RPC client
-├── todoist_client.py     # Todoist REST API client
-└── web_search_client.py  # DuckDuckGo web search client
+└── todoist_client.py     # Todoist REST API client
 ```
 
 ### Key Design Decisions
@@ -43,7 +42,7 @@ src/tool_bot/
 ### ✅ Completed
 
 1. **Project Scaffold**
-   - `requirements.txt` with dependencies (matrix-nio, openai, anthropic, whisper, httpx, pydantic)
+   - `requirements.txt` with dependencies (matrix-nio, openai, whisper, httpx, pydantic)
    - Dockerfile (multi-stage Python 3.12-slim)
    - `shell.nix` for NixOS dev with direnv integration
    - `.envrc.example` template with `use nix`
@@ -51,7 +50,7 @@ src/tool_bot/
 
 2. **Configuration System** (`config.py`)
    - Loads from environment variables (via direnv)
-   - Required: `MATRIX_HOMESERVER`, login credentials, `ALLOWED_USERS`, LLM provider + keys
+   - Required: `MATRIX_HOMESERVER`, login credentials, `ALLOWED_USERS`, `OPENAI_API_KEY`
    - Optional: `TODOIST_TOKEN`, `WHISPER_MODEL`, `ENABLE_E2EE`
 
 3. **Matrix Client Core** (`matrix_client.py`)
@@ -74,10 +73,10 @@ src/tool_bot/
    - `on_redaction()` handler: when user deletes message, find descendants, redact bot messages, remove from tree
 
 6. **LLM Engine** (`llm_engine.py`)
-   - `LLMEngine` class: unified interface for OpenAI and Anthropic
-   - Tool schemas: `FlashcardCreate` (type, front, back, deck, tags), `TodoCreate` (content, due_string, priority, labels, project_name), `WebSearch` (query, max_results)
+   - `LLMEngine` class: interface for OpenAI
+   - Tool schemas: `FlashcardCreate` (type, front, back, deck, tags), `TodoCreate` (content, due_string, priority, labels, project_name)
    - Methods:
-     - `_get_tools_schema()`: format tools for each provider
+     - `_get_tools_schema()`: format tools for OpenAI
      - `process_message(system_prompt, messages)`: returns (text, tool_calls)
    - Pydantic models for type safety
 
@@ -94,11 +93,6 @@ src/tool_bot/
      - `create_task()`: with idempotency (`X-Request-Id`)
      - `get_projects()`, `create_project()`, `get_or_create_project()`
    - Natural date parsing via `due_string`
-
-9. **Web Search Client** (`web_search_client.py`)
-   - `WebSearchClient`: DuckDuckGo web search via duckduckgo-search library
-   - Methods:
-     - `search(query, max_results)`: performs web search and returns formatted results
    - Results include title, body snippet, and URL for each search result
 
 ### 🚧 In Progress / TODO
@@ -255,9 +249,7 @@ Bot: get_descendants(m1) → [b1, m2, b2]
 | `MATRIX_PASSWORD` | Yes* | Bot password | `secret` |
 | `MATRIX_ACCESS_TOKEN` | Yes* | Access token (alternative to password) | `syt_...` |
 | `ALLOWED_USERS` | Yes | Comma-separated MXIDs | `@user1:example.org,@user2:example.org` |
-| `LLM_PROVIDER` | Yes | `openai` or `anthropic` | `openai` |
-| `OPENAI_API_KEY` | If OpenAI | API key | `sk-...` |
-| `ANTHROPIC_API_KEY` | If Anthropic | API key | `sk-ant-...` |
+| `OPENAI_API_KEY` | Yes | OpenAI API key | `sk-...` |
 | `TODOIST_TOKEN` | No | Todoist API token | `abc123...` |
 | `WHISPER_MODEL` | No | Whisper model size | `base` (default), `small`, `medium`, `large` |
 | `ENABLE_E2EE` | No | Enable encryption support | `true` or `false` (default) |
@@ -408,7 +400,6 @@ await client.room_redact(room_id, event_id, reason="Bot cleanup")
 - **Anki-Connect**: https://foosoft.net/projects/anki-connect/
 - **Todoist REST API**: https://developer.todoist.com/rest/v2/
 - **OpenAI API**: https://platform.openai.com/docs/api-reference
-- **Anthropic API**: https://docs.anthropic.com/claude/reference/
 - **Whisper**: https://github.com/openai/whisper
 
 ## Project Metadata
@@ -416,7 +407,7 @@ await client.room_redact(room_id, event_id, reason="Bot cleanup")
 - **Language**: Python 3.9+
 - **Async Framework**: asyncio
 - **Matrix Client**: matrix-nio
-- **LLM Providers**: OpenAI (gpt-4o-mini), Anthropic (claude-3-5-sonnet)
+- **LLM Provider**: OpenAI (gpt-4o-mini)
 - **Voice Transcription**: OpenAI Whisper
 - **External APIs**: Anki-Connect (local), Todoist (cloud)
 - **Config Management**: direnv + environment variables
