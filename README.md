@@ -6,6 +6,7 @@ Features include threaded conversations, message edits with regeneration, reacti
 ## ✨ Features
 
 - **LLM Tool Calling**: Uses OpenAI (gpt-4o-mini) with function/tool calling
+- **Web Search**: OpenAI's integrated web search for current information
 - **Anki Integration**: Creates flashcards via Anki-Connect with automatic deck hierarchy (`Active::Bot`)
 - **Todoist Integration**: Creates tasks with natural language due dates and project management
 - **Threaded Context**: First message spawns a thread; maintains conversation context
