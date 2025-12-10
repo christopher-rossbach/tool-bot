@@ -1,4 +1,4 @@
-"""LLM tool calling engine with OpenAI and Anthropic support."""
+"""LLM tool calling engine with OpenAI support."""
 
 from __future__ import annotations
 
@@ -43,13 +43,7 @@ class TodoCreate(BaseModel):
     )
 
 
-class WebSearch(BaseModel):
-    """Schema for performing a web search."""
 
-    query: str = Field(description="Search query to look up on the web")
-    max_results: int = Field(
-        description="Maximum number of results to return (1-10)", default=5, ge=1, le=10
-    )
 
 
 class ToolCall(BaseModel):
@@ -61,95 +55,23 @@ class ToolCall(BaseModel):
 
 
 class LLMEngine:
-    """LLM tool-calling engine supporting OpenAI and Anthropic."""
+    """LLM tool-calling engine supporting OpenAI."""
 
     def __init__(self, config: Config):
         self.config = config
-        self.provider = config.llm_provider.lower()
+        from openai import AsyncOpenAI
 
-        # Initialize client based on provider
-        if self.provider == "openai":
-            from openai import AsyncOpenAI
-
-            self.client = AsyncOpenAI(api_key=config.openai_api_key)
-        elif self.provider == "anthropic":
-            from anthropic import AsyncAnthropic
-
-            self.client = AsyncAnthropic(api_key=config.anthropic_api_key)
-        else:
-            raise ValueError(f"Unsupported LLM provider: {self.provider}")
+        self.client = AsyncOpenAI(api_key=config.openai_api_key)
 
     def _get_tools_schema(self) -> List[Dict]:
         """Get tool definitions for the LLM."""
-        if self.provider == "openai":
-            return [
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "create_flashcards",
-                        "description": "Create Anki flashcards for learning. IMPORTANT: If the user says 'a flashcard' or 'one flashcard', create exactly ONE. If they say 'flashcards' or 'N flashcards', create that exact number. Never create more than requested.",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "flashcards": {
-                                    "type": "array",
-                                    "items": FlashcardCreate.model_json_schema(),
-                                    "description": "Array of flashcards to create. If user says 'a flashcard', this array should contain exactly 1 item.",
-                                }
-                            },
-                            "required": ["flashcards"],
-                        },
-                    },
-                },
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "create_todos",
-                        "description": "Create Todoist todos/tasks. IMPORTANT: If the user says 'a todo' or 'one todo', create exactly ONE. If they say 'todos' or 'N todos', create that exact number. Never create more than requested.",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "todos": {
-                                    "type": "array",
-                                    "items": TodoCreate.model_json_schema(),
-                                    "description": "Array of todos to create. If user says 'a todo', this array should contain exactly 1 item.",
-                                }
-                            },
-                            "required": ["todos"],
-                        },
-                    },
-                },
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "web_search",
-                        "description": "Search the web for current information using DuckDuckGo. Use this when you need up-to-date information, facts, or details that you don't have in your training data.",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "query": {
-                                    "type": "string",
-                                    "description": "The search query to look up on the web",
-                                },
-                                "max_results": {
-                                    "type": "integer",
-                                    "description": "Maximum number of results to return (1-10)",
-                                    "default": 5,
-                                    "minimum": 1,
-                                    "maximum": 10,
-                                },
-                            },
-                            "required": ["query"],
-                        },
-                    },
-                },
-            ]
-        else:  # Anthropic
-            return [
-                {
+        return [
+            {
+                "type": "function",
+                "function": {
                     "name": "create_flashcards",
                     "description": "Create Anki flashcards for learning. IMPORTANT: If the user says 'a flashcard' or 'one flashcard', create exactly ONE. If they say 'flashcards' or 'N flashcards', create that exact number. Never create more than requested.",
-                    "input_schema": {
+                    "parameters": {
                         "type": "object",
                         "properties": {
                             "flashcards": {
@@ -161,10 +83,13 @@ class LLMEngine:
                         "required": ["flashcards"],
                     },
                 },
-                {
+            },
+            {
+                "type": "function",
+                "function": {
                     "name": "create_todos",
                     "description": "Create Todoist todos/tasks. IMPORTANT: If the user says 'a todo' or 'one todo', create exactly ONE. If they say 'todos' or 'N todos', create that exact number. Never create more than requested.",
-                    "input_schema": {
+                    "parameters": {
                         "type": "object",
                         "properties": {
                             "todos": {
@@ -176,28 +101,8 @@ class LLMEngine:
                         "required": ["todos"],
                     },
                 },
-                {
-                    "name": "web_search",
-                    "description": "Search the web for current information using DuckDuckGo. Use this when you need up-to-date information, facts, or details that you don't have in your training data.",
-                    "input_schema": {
-                        "type": "object",
-                        "properties": {
-                            "query": {
-                                "type": "string",
-                                "description": "The search query to look up on the web",
-                            },
-                            "max_results": {
-                                "type": "integer",
-                                "description": "Maximum number of results to return (1-10)",
-                                "default": 5,
-                                "minimum": 1,
-                                "maximum": 10,
-                            },
-                        },
-                        "required": ["query"],
-                    },
-                },
-            ]
+            },
+        ]
 
     async def process_message(
         self,
@@ -216,10 +121,7 @@ class LLMEngine:
         Returns:
             (response_text, tool_calls)
         """
-        if self.provider == "openai":
-            return await self._process_openai(system_prompt, messages, enable_tools)
-        else:
-            return await self._process_anthropic(system_prompt, messages, enable_tools)
+        return await self._process_openai(system_prompt, messages, enable_tools)
 
     async def _process_openai(
         self,
@@ -258,39 +160,4 @@ class LLMEngine:
 
         return text, tool_calls
 
-    async def _process_anthropic(
-        self,
-        system_prompt: str,
-        messages: List[Dict[str, str]],
-        enable_tools: bool = True,
-    ) -> tuple[Optional[str], List[ToolCall]]:
-        """Process with Anthropic."""
-        kwargs = {
-            "model": self.config.anthropic_model,
-            "max_tokens": 4096,
-            "system": system_prompt,
-            "messages": messages,
-        }
 
-        # Add tools only if enabled
-        if enable_tools:
-            kwargs["tools"] = self._get_tools_schema()
-
-        response = await self.client.messages.create(**kwargs)
-
-        text = None
-        tool_calls = []
-
-        for block in response.content:
-            if block.type == "text":
-                text = block.text
-            elif enable_tools and block.type == "tool_use":
-                tool_calls.append(
-                    ToolCall(
-                        tool_name=block.name,
-                        arguments=block.input,
-                        call_id=block.id,
-                    )
-                )
-
-        return text, tool_calls
