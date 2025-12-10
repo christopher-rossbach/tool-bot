@@ -64,7 +64,12 @@ class LLMEngine:
         self.client = AsyncOpenAI(api_key=config.openai_api_key)
 
     def _get_tools_schema(self) -> List[Dict]:
-        """Get tool definitions for the LLM."""
+        """
+        Get tool definitions for the LLM.
+        
+        Currently supports: create_flashcards, create_todos
+        Note: OpenAI's web search is not available through the API tools parameter.
+        """
         return [
             {
                 "type": "function",
