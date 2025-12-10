@@ -43,14 +43,6 @@ class TodoCreate(BaseModel):
     )
 
 
-class WebSearchQuery(BaseModel):
-    """Schema for performing a web search."""
-
-    query: str = Field(
-        description="The search query or question to search the web for. Should be a clear, specific question that can be answered by web search."
-    )
-
-
 
 
 
@@ -221,7 +213,7 @@ class LLMEngine:
             
             # The response should contain the search results
             if message.content:
-                logger.info(f"Web search completed successfully")
+                logger.info("Web search completed successfully")
                 return message.content
             else:
                 logger.warning("Web search returned no content")
