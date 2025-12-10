@@ -6,6 +6,7 @@ Features include threaded conversations, message edits with regeneration, reacti
 ## ✨ Features
 
 - **LLM Tool Calling**: Uses OpenAI (gpt-4o-mini) with function/tool calling
+- **Web Search**: Available when using search-enabled models (e.g., gpt-4o-mini-search-preview)
 - **Anki Integration**: Creates flashcards via Anki-Connect with automatic deck hierarchy (`Active::Bot`)
 - **Todoist Integration**: Creates tasks with natural language due dates and project management
 - **Threaded Context**: First message spawns a thread; maintains conversation context
@@ -130,6 +131,7 @@ All configuration via environment variables (see \`.envrc.example\`):
 - `ENABLE_ANKI` - Enable/disable Anki integration (default: `true`)
 - `ANKI_CONNECT_URL` - Anki-Connect URL (default: `http://localhost:8765`)
 - `WHISPER_MODEL` - Whisper model size (default: `base`). Options: `tiny`, `tiny.en`, `base`, `base.en`, `small`, `small.en`, `medium`, `medium.en`, `large-v1`, `large-v2`, `large-v3`, `large`
+- `OPENAI_MODEL` - OpenAI model to use (default: `gpt-4o-mini`). Use `gpt-4o-mini-search-preview` or `gpt-4o-search-preview` for web search
 - `ENABLE_E2EE` - Enable E2EE support (default: `false`)
 
 ### System Prompt

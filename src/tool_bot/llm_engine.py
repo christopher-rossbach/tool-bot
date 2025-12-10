@@ -67,10 +67,10 @@ class LLMEngine:
         """
         Get tool definitions for the LLM.
         
-        Currently supports: create_flashcards, create_todos
-        Note: OpenAI's web search is not available through the API tools parameter.
+        Currently supports: create_flashcards, create_todos, web_search
+        Note: web_search requires using a search-enabled model like gpt-4o-mini-search-preview
         """
-        return [
+        tools = [
             {
                 "type": "function",
                 "function": {
@@ -108,6 +108,13 @@ class LLMEngine:
                 },
             },
         ]
+        
+        # Add web_search tool if using a search-enabled model
+        # Web search works with: gpt-5-search-api, gpt-4o-search-preview, gpt-4o-mini-search-preview
+        if "search" in self.config.openai_model.lower():
+            tools.append({"type": "web_search"})
+        
+        return tools
 
     async def process_message(
         self,
