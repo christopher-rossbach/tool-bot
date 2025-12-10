@@ -102,9 +102,6 @@ class LLMEngine:
                     },
                 },
             },
-            {
-                "type": "web_search_preview"
-            },
         ]
 
     async def process_message(
