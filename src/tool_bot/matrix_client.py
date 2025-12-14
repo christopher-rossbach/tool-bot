@@ -552,6 +552,12 @@ class MatrixBot:
         
         asyncio.create_task(self._mark_as_read(room.room_id, event.event_id))
 
+        # Check if we've already responded to this message (prevents re-processing commands from history)
+        tree = self.conversation_mgr.get_tree(room.room_id)
+        if tree.has_bot_response(event.event_id):
+            logger.debug(f"Already responded to {event.event_id}, skipping")
+            return
+
         # Check for commands
         if event.body.strip().startswith("!clear"):
             logger.info(f"Detected !clear command from {event.sender}")
@@ -1234,11 +1240,14 @@ class MatrixBot:
         if not self.client:
             return
 
+        tree = self.conversation_mgr.get_tree(room_id)
+
         try:
             status_resp = await self._send_text_reply(
                 room_id,
                 command_event_id,
                 "🗑️ Clearing all messages in this room...",
+                tree=tree,
             )
 
             root_messages_to_delete = []
@@ -1346,6 +1355,7 @@ class MatrixBot:
                 room_id,
                 command_event_id,
                 result_message,
+                tree=tree,
             )
 
         except Exception as e:
@@ -1379,11 +1389,14 @@ class MatrixBot:
         logger.info(f"Bot shutdown requested in room {room_id}")
         self._shutdown_requested = True
         
+        tree = self.conversation_mgr.get_tree(room_id)
+        
         try:
             await self._send_text_reply(
                 room_id,
                 command_event_id,
                 "👋 Shutting down bot...",
+                tree=tree,
             )
         except Exception as e:
             logger.error(f"Error sending shutdown message: {e}")
