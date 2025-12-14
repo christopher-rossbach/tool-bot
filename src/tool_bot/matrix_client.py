@@ -44,6 +44,7 @@ class MatrixBot:
         self.is_initial_sync = True
         self.whisper_model = None
         self.room_topics: Dict[str, Optional[str]] = {}
+        self._shutdown_requested = False
 
     @staticmethod
     def _get_default_system_prompt() -> str:
@@ -168,7 +169,19 @@ class MatrixBot:
 
         logger.info("History loaded. Starting sync loop...")
         self.is_initial_sync = False
-        await self.client.sync_forever(timeout=30000, full_state=True)
+        
+        # Custom sync loop that can be interrupted by !die command
+        while not self._shutdown_requested:
+            try:
+                await self.client.sync(timeout=30000, full_state=True)
+            except Exception as e:
+                if self._shutdown_requested:
+                    logger.info("Sync loop interrupted by shutdown request")
+                    break
+                logger.error(f"Sync error: {e}")
+                await asyncio.sleep(5)
+        
+        logger.info("Sync loop ended, bot shutting down...")
 
     async def _load_room_history(self, room_id: str, limit: int = 10000) -> None:
         """Load recent room history to populate conversation tree."""
@@ -546,6 +559,11 @@ class MatrixBot:
         if event.body.strip().startswith("!clear"):
             logger.info(f"Detected !clear command from {event.sender}")
             await self._handle_clear_command(room.room_id, event.event_id)
+            return
+        
+        if event.body.strip().startswith("!die"):
+            logger.info(f"Detected !die command from {event.sender}")
+            await self._handle_die_command(room.room_id, event.event_id)
             return
 
         # Extract relations
@@ -1355,6 +1373,27 @@ class MatrixBot:
         except Exception as e:
             logger.debug(f"Failed to redact message {event_id}: {e}")
             raise
+
+    async def _handle_die_command(self, room_id: str, command_event_id: str) -> None:
+        """Handle the !die command to stop the bot."""
+        if not self.client:
+            return
+        
+        try:
+            logger.info(f"Bot shutdown requested in room {room_id}")
+            await self._send_text_reply(
+                room_id,
+                command_event_id,
+                "👋 Shutting down bot...",
+            )
+            self._shutdown_requested = True
+        except Exception as e:
+            logger.error(f"Error handling !die command: {e}")
+            await self._send_error_reply(
+                room_id,
+                command_event_id,
+                f"Failed to shutdown: {e}",
+            )
 
     async def stop(self) -> None:
         """Stop the client and cleanup."""
