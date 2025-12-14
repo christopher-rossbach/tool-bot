@@ -15,6 +15,7 @@ Features include threaded conversations, message edits with regeneration, reacti
 - **Voice Transcription**: Transcribes voice messages in German, Spanish, and English via OpenAI Whisper API
 - **Cascade Deletions**: Deleting a message removes all bot replies in that thread
 - **Clear Command**: Use `!clear` to delete all messages in the current room
+- **Die Command**: Use `!die` to stop the bot
 - **Restart Safe**: Loads room history on startup; won't re-process old messages
 - **Room Prompts**: System prompt from room topic; sets sensible default on join
 - **Graceful Fallbacks**: Helpful error messages when Anki-Connect is unavailable
@@ -112,6 +113,12 @@ Bot: ✅ Room cleared!
      Deleted: 42 root messages
      Failed: 0 messages
      (Descendants cascaded automatically)
+```
+
+**Stop bot:**
+```
+You: !die
+Bot: 👋 Shutting down bot...
 ```
 
 
