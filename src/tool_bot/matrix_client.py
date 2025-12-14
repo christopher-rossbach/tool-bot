@@ -175,9 +175,6 @@ class MatrixBot:
             try:
                 await self.client.sync(timeout=30000, full_state=True)
             except Exception as e:
-                if self._shutdown_requested:
-                    logger.info("Sync loop interrupted by shutdown request")
-                    break
                 logger.error(f"Sync error: {e}")
                 await asyncio.sleep(5)
         
@@ -1379,21 +1376,17 @@ class MatrixBot:
         if not self.client:
             return
         
+        logger.info(f"Bot shutdown requested in room {room_id}")
+        self._shutdown_requested = True
+        
         try:
-            logger.info(f"Bot shutdown requested in room {room_id}")
             await self._send_text_reply(
                 room_id,
                 command_event_id,
                 "👋 Shutting down bot...",
             )
-            self._shutdown_requested = True
         except Exception as e:
-            logger.error(f"Error handling !die command: {e}")
-            await self._send_error_reply(
-                room_id,
-                command_event_id,
-                f"Failed to shutdown: {e}",
-            )
+            logger.error(f"Error sending shutdown message: {e}")
 
     async def stop(self) -> None:
         """Stop the client and cleanup."""
