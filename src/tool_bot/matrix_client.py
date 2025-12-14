@@ -173,7 +173,7 @@ class MatrixBot:
         # Custom sync loop that can be interrupted by !die command
         while not self._shutdown_requested:
             try:
-                await self.client.sync(timeout=30000, full_state=True)
+                await self.client.sync(timeout=30000)
             except Exception as e:
                 logger.error(f"Sync error: {e}")
                 await asyncio.sleep(5)
